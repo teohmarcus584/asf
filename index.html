@@ -3223,6 +3223,61 @@ const SUPABASE_ANON_KEY = "sb_publishable_RiKDSx7sDD9J9JkZ3U8JLw_8RDz3XOA";
 var supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 console.log('✅ Supabase client created');
+// ==================== STORAGE FALLBACK (for sandboxed environments) ====================
+(function() {
+  // Test if localStorage is accessible
+  let localStorageWorks = false;
+  let sessionStorageWorks = false;
+  
+  try {
+    localStorage.setItem('__test__', '1');
+    localStorage.removeItem('__test__');
+    localStorageWorks = true;
+  } catch (e) {
+    console.warn('⚠️ localStorage blocked (sandbox). Using in-memory fallback.');
+  }
+  
+  try {
+    sessionStorage.setItem('__test__', '1');
+    sessionStorage.removeItem('__test__');
+    sessionStorageWorks = true;
+  } catch (e) {
+    console.warn('⚠️ sessionStorage blocked (sandbox). Using in-memory fallback.');
+  }
+  
+  // In-memory fallback storage
+  if (!localStorageWorks) {
+    const memoryStore = {};
+    Object.defineProperty(window, 'localStorage', {
+      value: {
+        getItem: (key) => memoryStore[key] !== undefined ? memoryStore[key] : null,
+        setItem: (key, value) => { memoryStore[key] = String(value); },
+        removeItem: (key) => { delete memoryStore[key]; },
+        clear: () => { Object.keys(memoryStore).forEach(k => delete memoryStore[k]); },
+        key: (i) => Object.keys(memoryStore)[i] || null,
+        get length() { return Object.keys(memoryStore).length; }
+      },
+      writable: false,
+      configurable: true
+    });
+  }
+  
+  if (!sessionStorageWorks) {
+    const sessionMemory = {};
+    Object.defineProperty(window, 'sessionStorage', {
+      value: {
+        getItem: (key) => sessionMemory[key] !== undefined ? sessionMemory[key] : null,
+        setItem: (key, value) => { sessionMemory[key] = String(value); },
+        removeItem: (key) => { delete sessionMemory[key]; },
+        clear: () => { Object.keys(sessionMemory).forEach(k => delete sessionMemory[k]); },
+        key: (i) => Object.keys(sessionMemory)[i] || null,
+        get length() { return Object.keys(sessionMemory).length; }
+      },
+      writable: false,
+      configurable: true
+    });
+  }
+})();
 // ==================== FINGERPRINT LOGIN CONFIG ====================
 const ESP32_FINGERPRINT_URL = "http://192.168.0.107";  // ← Replace with YOUR ESP32 IP
 
