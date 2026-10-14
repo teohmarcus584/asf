@@ -2867,7 +2867,7 @@ body:not(.admin-mode) #adminReportModal .stat-item.breakdown {
       </div>
     </div>
 
-    <!-- ✅ NEW: Fingerprint Mappings Section -->
+    <!-- Fingerprint Mappings Section -->
     <div style="margin-top: 24px; border-top: 2px solid #e2e8f0; padding-top: 16px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <h4 style="margin:0;">🖐️ Fingerprint Mappings</h4>
@@ -2888,6 +2888,7 @@ body:not(.admin-mode) #adminReportModal .stat-item.breakdown {
     </div>
   </div>
 </div>
+
 <!-- Add/Edit Employee Modal -->
 <div id="employeeFormModal" class="modal-overlay">
   <div class="modal-container" style="max-width: 550px;">
@@ -2902,18 +2903,16 @@ body:not(.admin-mode) #adminReportModal .stat-item.breakdown {
       </div>
       
       <!-- PIN -->
-      <!-- PIN -->
-<div class="filter-group" style="margin-bottom: 16px;">
-  <label style="font-weight: 600; color: #1e293b; font-size: 0.95rem;">PIN Code <span style="color: #ef4444;">*</span></label>
-  <div style="position: relative; display: flex; align-items: center;">
-    <input type="password" id="employeePinInput" class="modal-input" placeholder="4-digit PIN" maxlength="4" inputmode="numeric" style="width: 100%; padding: 12px 16px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; letter-spacing: 6px; font-family: monospace; padding-right: 50px;">
-    <button id="togglePinVisibilityBtn" type="button" style="position: absolute; right: 12px; background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #94a3b8; padding: 8px; transition: all 0.2s ease; border-radius: 8px;">
-      👁️
-    </button>
-  </div>
-  <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">Enter a 4-digit numeric PIN</div>
-</div>
-     
+      <div class="filter-group" style="margin-bottom: 16px;">
+        <label style="font-weight: 600; color: #1e293b; font-size: 0.95rem;">PIN Code <span style="color: #ef4444;">*</span></label>
+        <div style="position: relative; display: flex; align-items: center;">
+          <input type="password" id="employeePinInput" class="modal-input" placeholder="4-digit PIN" maxlength="4" inputmode="numeric" style="width: 100%; padding: 12px 16px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; letter-spacing: 6px; font-family: monospace; padding-right: 50px;">
+          <button id="togglePinVisibilityBtn" type="button" style="position: absolute; right: 12px; background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #94a3b8; padding: 8px; transition: all 0.2s ease; border-radius: 8px;">
+            👁️
+          </button>
+        </div>
+        <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">Enter a 4-digit numeric PIN</div>
+      </div>
 
       <!-- Store Assignment -->
       <div class="filter-group" style="margin-bottom: 16px;">
@@ -2932,8 +2931,41 @@ body:not(.admin-mode) #adminReportModal .stat-item.breakdown {
           <span style="font-size: 0.8rem; color: #94a3b8; margin-left: auto;">Grants full system access</span>
         </label>
       </div>
+
+      <!-- Category Access Restrictions -->
+      <div class="filter-group" id="categoryAccessGroup" style="margin-bottom: 16px;">
+        <label style="font-weight: 600; color: #1e293b; font-size: 0.95rem;">
+          📂 Category Access
+        </label>
+        <div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 8px;">
+          Leave all unchecked to allow access to ALL categories
+        </div>
+        <div id="categoryCheckboxes" style="
+          display: flex; 
+          flex-wrap: wrap; 
+          gap: 8px; 
+          padding: 12px; 
+          background: #f8fafc; 
+          border-radius: 12px; 
+          border: 2px solid #e2e8f0;
+          max-height: 200px;
+          overflow-y: auto;
+        ">
+          <!-- Categories will be populated dynamically -->
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 8px;">
+          <button type="button" id="selectAllCategoriesBtn" style="
+            background: #f1f5f9; border: none; border-radius: 20px; 
+            padding: 6px 14px; font-size: 0.8rem; cursor: pointer;
+          ">✅ Select All</button>
+          <button type="button" id="clearAllCategoriesBtn" style="
+            background: #f1f5f9; border: none; border-radius: 20px; 
+            padding: 6px 14px; font-size: 0.8rem; cursor: pointer;
+          ">❌ Clear All (Allow All)</button>
+        </div>
+      </div>
     </div>
-    
+
     <div id="employeeFormError" style="color:#ef4444; margin-top: 12px; display: none;"></div>
     
     <div class="modal-buttons">
@@ -2943,6 +2975,7 @@ body:not(.admin-mode) #adminReportModal .stat-item.breakdown {
   </div>
 </div>
 
+<!-- Fingerprint Add Modal -->
 <div id="fingerprintAddModal" class="modal-overlay">
   <div class="modal-container" style="max-width: 500px;">
     <span class="close-modal" id="closeFingerprintAddModal">×</span>
@@ -2984,13 +3017,14 @@ body:not(.admin-mode) #adminReportModal .stat-item.breakdown {
     </div>
   </div>
 </div>
+
 <!-- Store Management Modal -->
 <div id="storeManagementModal" class="modal-overlay">
   <div class="modal-container" style="max-width: 800px;">
     <span class="close-modal" id="closeStoreManagementModal">×</span>
     <div class="modal-title">🏪 Store Management</div>
     
-    <!-- ✅ REPLACE the Add New Store form with this button -->
+    <!-- Add New Store Button -->
     <div style="margin-bottom: 20px;">
       <button id="openAddStoreBtn" class="modal-btn modal-btn-primary" style="width: 100%; padding: 14px; font-size: 1.1rem; background: linear-gradient(135deg, #059669 0%, #047857 100%); display: flex; align-items: center; justify-content: center; gap: 10px;">
         <span style="font-size: 1.5rem;">➕</span> Add New Store
@@ -3010,7 +3044,6 @@ body:not(.admin-mode) #adminReportModal .stat-item.breakdown {
     </div>
   </div>
 </div>
-
 
 <div id="collectionModal" class="modal-overlay">
   <div class="modal-container" style="max-width: 800px;">
@@ -3370,6 +3403,185 @@ let currentReceiptFilters = {
     search: '',
     range: 'all'
 };
+// ==================== CATEGORY ACCESS CONTROL ====================
+
+/**
+ * Check if the current employee can access a specific category
+ * @param {string} category - The category to check
+ * @returns {boolean} - True if access is allowed
+ */
+function canAccessCategory(category) {
+  if (!currentEmployee) return false;
+  
+  // Admins can access everything
+  if (currentEmployee.isAdmin) return true;
+  
+  // If no restrictions set (null or empty), allow all
+  const allowed = currentEmployee.allowed_categories;
+  if (!allowed || !Array.isArray(allowed) || allowed.length === 0) {
+    return true;
+  }
+  
+  // Check if category is in the allowed list
+  return allowed.includes(category);
+}
+
+/**
+ * Get list of categories the current employee can access
+ * @param {string[]} allCategories - All available categories
+ * @returns {string[]} - Filtered list of accessible categories
+ */
+function getAccessibleCategories(allCategories) {
+  if (!currentEmployee) return [];
+  
+  // Admins get all categories
+  if (currentEmployee.isAdmin) return allCategories;
+  
+  // If no restrictions set, allow all
+  const allowed = currentEmployee.allowed_categories;
+  if (!allowed || !Array.isArray(allowed) || allowed.length === 0) {
+    return allCategories;
+  }
+  
+  // Return only allowed categories that exist in allCategories
+  return allCategories.filter(cat => allowed.includes(cat));
+}
+
+/**
+ * Filter products based on employee's category access
+ * @param {Array} productsList - List of products
+ * @returns {Array} - Filtered list of accessible products
+ */
+function filterProductsByCategoryAccess(productsList) {
+  if (!currentEmployee) return [];
+  
+  // Admins see everything
+  if (currentEmployee.isAdmin) return productsList;
+  
+  // If no restrictions, return all
+  const allowed = currentEmployee.allowed_categories;
+  if (!allowed || !Array.isArray(allowed) || allowed.length === 0) {
+    return productsList;
+  }
+  
+  // Filter products to only allowed categories
+  return productsList.filter(p => allowed.includes(p.category));
+}
+
+/**
+ * Check if employee has any category restrictions
+ */
+function hasCategoryRestrictions() {
+  if (!currentEmployee) return false;
+  if (currentEmployee.isAdmin) return false;
+  
+  const allowed = currentEmployee.allowed_categories;
+  return allowed && Array.isArray(allowed) && allowed.length > 0;
+}
+
+/**
+ * Show a friendly message when access is denied
+ */
+async function showCategoryAccessDenied(category) {
+  const allowedList = currentEmployee?.allowed_categories || [];
+  let message = `You don't have permission to access "${category}".`;
+  
+  if (allowedList.length > 0) {
+    message += `\n\nYou can only access:\n• ${allowedList.join('\n• ')}`;
+  }
+  
+  await showAlertModal('🚫 Access Denied', message);
+}
+
+// ==================== CATEGORY ACCESS UI ====================
+
+/**
+ * Populate category checkboxes in employee form
+ * @param {string[]} selectedCategories - Currently selected categories
+ */
+function populateCategoryCheckboxes(selectedCategories = []) {
+  const container = document.getElementById('categoryCheckboxes');
+  if (!container) return;
+  
+  // Get all unique categories from products
+  const allCategories = [...new Set(products.map(p => p.category))].sort();
+  
+  if (allCategories.length === 0) {
+    container.innerHTML = '<div style="color:#94a3b8; font-size:0.85rem;">No categories available</div>';
+    return;
+  }
+  
+  const hasRestrictions = selectedCategories && selectedCategories.length > 0;
+  
+  let html = '';
+  allCategories.forEach(cat => {
+    // If no restrictions set, show all as checked (meaning "all allowed")
+    const isChecked = !hasRestrictions || selectedCategories.includes(cat);
+    
+    html += `
+      <label style="
+        display: flex; 
+        align-items: center; 
+        gap: 6px; 
+        padding: 6px 12px; 
+        background: ${isChecked ? '#f0fdf4' : '#fef2f2'}; 
+        border-radius: 20px; 
+        border: 1px solid ${isChecked ? '#10b981' : '#fecaca'};
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+      ">
+        <input type="checkbox" 
+               class="category-access-checkbox" 
+               value="${escapeHtml(cat)}" 
+               ${isChecked ? 'checked' : ''}
+               style="width: 16px; height: 16px; cursor: pointer; accent-color: #10b981;">
+        <span>${escapeHtml(cat)}</span>
+      </label>
+    `;
+  });
+  
+  container.innerHTML = html;
+  
+  // Attach change listeners to update visual state
+  container.querySelectorAll('.category-access-checkbox').forEach(cb => {
+    cb.addEventListener('change', function() {
+      const label = this.closest('label');
+      if (this.checked) {
+        label.style.background = '#f0fdf4';
+        label.style.borderColor = '#10b981';
+      } else {
+        label.style.background = '#fef2f2';
+        label.style.borderColor = '#fecaca';
+      }
+    });
+  });
+}
+
+/**
+ * Get selected categories from checkboxes
+ * @returns {string[]|null} - Array of selected categories, or null if all are selected
+ */
+function getSelectedCategoriesFromForm() {
+  const checkboxes = document.querySelectorAll('.category-access-checkbox');
+  const allCategories = [...new Set(products.map(p => p.category))].sort();
+  
+  const checked = [];
+  checkboxes.forEach(cb => {
+    if (cb.checked) checked.push(cb.value);
+  });
+  
+  // If all are checked, return null (meaning "no restrictions")
+  if (checked.length === allCategories.length) {
+    return null;
+  }
+  
+  // If none are checked, return empty array (meaning "no access")
+  // But this could be confusing - let's return null to mean "all"
+  // Actually, let's return the empty array to mean "no access"
+  // and handle it appropriately
+  return checked;
+}
 function openSideMenu() {
     if (stockTakeMode) {
         toggleStockTakeMode();
@@ -3424,11 +3636,30 @@ async function loadAndCacheEmployees(force = false) {
     
     if (data) {
       cachedEmployees = data.map(emp => {
+        // ✅ Auto-detect admin
         if (emp.pin === "1234" || (emp.name && emp.name.toLowerCase().includes("admin"))) {
           emp.isAdmin = true;
         }
+        
+        // ✅ Ensure allowed_categories is properly parsed
+        if (emp.allowed_categories) {
+          if (typeof emp.allowed_categories === 'string') {
+            try {
+              emp.allowed_categories = JSON.parse(emp.allowed_categories);
+            } catch(e) {
+              console.warn('Failed to parse allowed_categories for', emp.name, e);
+              emp.allowed_categories = null;
+            }
+          }
+          // Ensure it's an array or null
+          if (!Array.isArray(emp.allowed_categories)) {
+            emp.allowed_categories = null;
+          }
+        }
+        
         return emp;
       });
+      
       employeesLastFetched = now;
       localStorage.setItem('cachedEmployees', JSON.stringify({
         timestamp: now,
@@ -3442,7 +3673,20 @@ async function loadAndCacheEmployees(force = false) {
     if (local) {
       const { timestamp, employees } = JSON.parse(local);
       if (now - timestamp < EMPLOYEE_CACHE_TTL) {
-        cachedEmployees = employees;
+        // ✅ Re-parse allowed_categories for cached employees too
+        cachedEmployees = employees.map(emp => {
+          if (emp.allowed_categories && typeof emp.allowed_categories === 'string') {
+            try {
+              emp.allowed_categories = JSON.parse(emp.allowed_categories);
+            } catch(e) {
+              emp.allowed_categories = null;
+            }
+          }
+          if (!Array.isArray(emp.allowed_categories)) {
+            emp.allowed_categories = null;
+          }
+          return emp;
+        });
         employeesLastFetched = timestamp;
         return cachedEmployees;
       }
@@ -3506,12 +3750,41 @@ async function verifyEmployeeByPin(pin) {
       return false;
     }
     
+    // ✅ Parse allowed_categories properly
+    let allowedCategories = data.allowed_categories;
+    if (allowedCategories) {
+      if (typeof allowedCategories === 'string') {
+        try {
+          allowedCategories = JSON.parse(allowedCategories);
+        } catch(e) {
+          console.warn('Failed to parse allowed_categories:', e);
+          allowedCategories = null;
+        }
+      }
+      if (!Array.isArray(allowedCategories)) {
+        allowedCategories = null;
+      }
+    }
+    
+    // ✅ Auto-detect admin
+    const isAdmin = data.is_admin || 
+                    data.pin === "1234" || 
+                    (data.name && data.name.toLowerCase().includes("admin"));
+    
     currentEmployee = {
       id: data.id,
       name: data.name,
       pin: data.pin,
-      isAdmin: data.is_admin || false
+      isAdmin: isAdmin,
+      allowed_categories: allowedCategories  // ✅ Include category access
     };
+    
+    // ✅ Log for debugging
+    console.log('👤 Employee logged in:', {
+      name: currentEmployee.name,
+      isAdmin: currentEmployee.isAdmin,
+      allowed_categories: currentEmployee.allowed_categories
+    });
     
     document.getElementById('employeeNameHeader').innerText = `👤 ${currentEmployee.name}`;
     document.getElementById('loginModal').style.display = 'none';
@@ -4439,9 +4712,29 @@ function renderProductGrid() {
     return;
   }
   
+  // ✅ ADD: Check category access for the selected category
+  if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
+    productGridEl.innerHTML = `
+      <div style="text-align:center; padding:40px 20px;">
+        <div style="font-size:3rem; margin-bottom:16px;">🚫</div>
+        <div style="font-weight:600; font-size:1.2rem; color:#dc2626; margin-bottom:8px;">
+          Access Restricted
+        </div>
+        <div style="color:#64748b;">
+          You don't have permission to access this category.
+        </div>
+      </div>
+    `;
+    return;
+  }
+  
   // Category View (when no category selected, not in inventory mode, no search)
+   // Category View (when no category selected, not in inventory mode, no search)
   if (selectedCategory === 'all' && !inventoryMode && !searchTerm) {
     let categories = [...new Set(products.map(p => p.category))];
+    
+    // ✅ ADD: Filter categories by employee access
+    categories = getAccessibleCategories(categories);
     
     // Apply store filter to categories
     if (storeFilterActive && !showAllProductsInInventory) {
@@ -4509,7 +4802,11 @@ function renderProductGrid() {
   }
   
   // Apply ALL filters
+   // Apply ALL filters
   let filtered = products.slice();
+  
+  // ✅ ADD: 0. Category access filter (must come first)
+  filtered = filterProductsByCategoryAccess(filtered);
   
   // 1. Store filter
   if (storeFilterActive && !showAllProductsInInventory && !inventoryMode) {
@@ -5410,7 +5707,11 @@ function updateProductCard(productId) {
 
 function updateCategoryDropdown() {
   const previousSelected = categorySelect.value;
-  const categories = [...new Set(products.map(p => p.category))].sort();
+  let categories = [...new Set(products.map(p => p.category))].sort();
+  
+  // ✅ ADD: Filter categories by employee access
+  categories = getAccessibleCategories(categories);
+  
   categorySelect.innerHTML = '<option value="all">📂 All Categories</option>';
   categories.forEach(cat => {
     const option = document.createElement('option');
@@ -5418,6 +5719,7 @@ function updateCategoryDropdown() {
     option.textContent = cat;
     categorySelect.appendChild(option);
   });
+  
   if (previousSelected !== 'all' && categories.includes(previousSelected)) {
     categorySelect.value = previousSelected;
   } else {
@@ -9363,12 +9665,59 @@ async function renderEmployeeList() {
     // Sort by name
     const sorted = [...employees].sort((a, b) => a.name.localeCompare(b.name));
     
+    // ✅ Get all available categories for reference
+    const allCategories = [...new Set(products.map(p => p.category))].sort();
+    
     let html = '';
     for (const emp of sorted) {
       const isAdmin = emp.isAdmin || emp.is_admin || false;
       const storeName = emp.store ? getStoreName(emp.store) : 'All Stores';
       const storeEmoji = emp.store ? getStoreEmoji(emp.store) : '🌍';
       const isCurrent = currentEmployee && currentEmployee.id === emp.id;
+      
+      // ✅ Build category restrictions badge
+      let categoryBadge = '';
+      if (isAdmin) {
+        categoryBadge = `
+          <div style="font-size: 0.8rem; color: #8b5cf6; margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span style="background: #ede9fe; color: #6d28d9; padding: 2px 10px; border-radius: 12px; font-weight: 500;">
+              📂 All Categories (Admin)
+            </span>
+          </div>
+        `;
+      } else {
+        const allowed = emp.allowed_categories;
+        const hasRestrictions = allowed && Array.isArray(allowed) && allowed.length > 0;
+        
+        if (hasRestrictions) {
+          // Show restricted categories
+          const categoryChips = allowed.map(cat => 
+            `<span style="background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 500;">${escapeHtml(cat)}</span>`
+          ).join('');
+          
+          categoryBadge = `
+            <div style="font-size: 0.8rem; color: #3b82f6; margin-top: 6px;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px;">
+                <span style="font-weight: 600;">📂 Access:</span>
+                <span style="background: #fef3c7; color: #92400e; padding: 2px 10px; border-radius: 12px; font-weight: 500; font-size: 0.75rem;">
+                  ${allowed.length} of ${allCategories.length} categories
+                </span>
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
+                ${categoryChips}
+              </div>
+            </div>
+          `;
+        } else {
+          categoryBadge = `
+            <div style="font-size: 0.8rem; color: #10b981; margin-top: 6px;">
+              <span style="background: #f0fdf4; color: #059669; padding: 2px 10px; border-radius: 12px; font-weight: 500;">
+                📂 All Categories (No Restrictions)
+              </span>
+            </div>
+          `;
+        }
+      }
       
       html += `
         <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid ${isCurrent ? '#3b82f6' : '#e2e8f0'}; ${isCurrent ? 'border-left: 4px solid #3b82f6;' : ''}">
@@ -9385,6 +9734,7 @@ async function renderEmployeeList() {
               <div style="font-size: 0.85rem; color: #64748b; margin-top: 2px;">
                 ${storeEmoji} ${storeName}
               </div>
+              ${categoryBadge}
             </div>
             <div style="display: flex; gap: 8px; flex-wrap: wrap;">
               ${!isCurrent ? `<button class="switch-employee-btn" data-id="${emp.id}" style="background: #3b82f6; color: white; border: none; border-radius: 20px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer; transition: all 0.2s;">🔄 Switch</button>` : ''}
@@ -9440,49 +9790,80 @@ async function renderEmployeeList() {
   }
 }
 
-// Open Employee Form Modal (Add or Edit)
-function openEmployeeFormModal(employee = null) {
-  const modal = document.getElementById('employeeFormModal');
-  const title = document.getElementById('employeeFormTitle');
-  const nameInput = document.getElementById('employeeNameInput');
-  const pinInput = document.getElementById('employeePinInput');
-  const storeSelect = document.getElementById('employeeStoreSelect');
-  const adminCheck = document.getElementById('employeeAdminCheck');
-  const saveBtn = document.getElementById('saveEmployeeBtn');
-  const errorDiv = document.getElementById('employeeFormError');
+async function populateCategoryCheckboxes(selectedCategories = []) {
+  const container = document.getElementById('categoryCheckboxes');
+  if (!container) return;
   
-  // Clear error
-  errorDiv.style.display = 'none';
-  errorDiv.innerText = '';
+  // Get all unique categories from products
+  let allCategories = [...new Set(products.map(p => p.category))].sort();
   
-  // Populate store dropdown
-  populateEmployeeStoreSelect();
-  
-  if (employee) {
-    // Edit mode
-    title.innerText = '✏️ Edit Employee';
-    saveBtn.innerText = '💾 Update Employee';
-    nameInput.value = employee.name || '';
-    pinInput.value = employee.pin || '';
-    storeSelect.value = employee.store || '';
-    adminCheck.checked = employee.isAdmin || employee.is_admin || false;
-    
-    // Store employee ID for update
-    saveBtn.dataset.employeeId = employee.id;
-  } else {
-    // Add mode
-    title.innerText = '➕ Add New Employee';
-    saveBtn.innerText = '💾 Save Employee';
-    nameInput.value = '';
-    pinInput.value = '';
-    storeSelect.value = '';
-    adminCheck.checked = false;
-    delete saveBtn.dataset.employeeId;
+  // ✅ FALLBACK: If products is empty, fetch categories directly from Supabase
+  if (allCategories.length === 0) {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('category');
+      
+      if (!error && data) {
+        allCategories = [...new Set(data.map(p => p.category).filter(Boolean))].sort();
+      }
+    } catch (err) {
+      console.warn('Could not fetch categories from Supabase:', err);
+    }
   }
   
-  modal.style.display = 'flex';
-  setTimeout(() => nameInput.focus(), 300);
+  if (allCategories.length === 0) {
+    container.innerHTML = '<div style="color:#94a3b8; font-size:0.85rem;">No categories available</div>';
+    return;
+  }
+  
+  const hasRestrictions = selectedCategories && selectedCategories.length > 0;
+  
+  let html = '';
+  allCategories.forEach(cat => {
+    // If no restrictions set, show all as checked (meaning "all allowed")
+    const isChecked = !hasRestrictions || selectedCategories.includes(cat);
+    
+    html += `
+      <label style="
+        display: flex; 
+        align-items: center; 
+        gap: 6px; 
+        padding: 6px 12px; 
+        background: ${isChecked ? '#f0fdf4' : '#fef2f2'}; 
+        border-radius: 20px; 
+        border: 1px solid ${isChecked ? '#10b981' : '#fecaca'};
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.2s;
+      ">
+        <input type="checkbox" 
+               class="category-access-checkbox" 
+               value="${escapeHtml(cat)}" 
+               ${isChecked ? 'checked' : ''}
+               style="width: 16px; height: 16px; cursor: pointer; accent-color: #10b981;">
+        <span>${escapeHtml(cat)}</span>
+      </label>
+    `;
+  });
+  
+  container.innerHTML = html;
+  
+  // Attach change listeners to update visual state
+  container.querySelectorAll('.category-access-checkbox').forEach(cb => {
+    cb.addEventListener('change', function() {
+      const label = this.closest('label');
+      if (this.checked) {
+        label.style.background = '#f0fdf4';
+        label.style.borderColor = '#10b981';
+      } else {
+        label.style.background = '#fef2f2';
+        label.style.borderColor = '#fecaca';
+      }
+    });
+  });
 }
+
 
 // Close Employee Form Modal
 function closeEmployeeFormModal() {
@@ -9516,7 +9897,78 @@ function populateEmployeeStoreSelect() {
     select.value = currentValue;
   }
 }
-
+// Open Employee Form Modal (Add or Edit)
+function openEmployeeFormModal(employee = null) {
+  const modal = document.getElementById('employeeFormModal');
+  const title = document.getElementById('employeeFormTitle');
+  const nameInput = document.getElementById('employeeNameInput');
+  const pinInput = document.getElementById('employeePinInput');
+  const storeSelect = document.getElementById('employeeStoreSelect');
+  const adminCheck = document.getElementById('employeeAdminCheck');
+  const saveBtn = document.getElementById('saveEmployeeBtn');
+  const errorDiv = document.getElementById('employeeFormError');
+  
+  if (!modal) return;
+  
+  // Clear error
+  errorDiv.style.display = 'none';
+  errorDiv.innerText = '';
+  
+  // Reset PIN visibility
+  if (typeof pinVisible !== 'undefined' && pinVisible) {
+    togglePinVisibility();
+  }
+  if (typeof pinHideTimeout !== 'undefined' && pinHideTimeout) {
+    clearTimeout(pinHideTimeout);
+  }
+  
+  // Populate store dropdown
+  populateEmployeeStoreSelect();
+  
+  if (employee) {
+    // Edit mode
+    title.innerText = '✏️ Edit Employee';
+    saveBtn.innerText = '💾 Update Employee';
+    nameInput.value = employee.name || '';
+    pinInput.value = employee.pin || '';
+    storeSelect.value = employee.store || '';
+    adminCheck.checked = employee.isAdmin || employee.is_admin || false;
+    
+    // ✅ Populate category checkboxes with employee's restrictions
+    populateCategoryCheckboxes(employee.allowed_categories || []);
+    
+    saveBtn.dataset.employeeId = employee.id;
+  } else {
+    // Add mode
+    title.innerText = '➕ Add New Employee';
+    saveBtn.innerText = '💾 Save Employee';
+    nameInput.value = '';
+    pinInput.value = '';
+    storeSelect.value = '';
+    adminCheck.checked = false;
+    
+    // ✅ Populate with no restrictions (all allowed)
+    populateCategoryCheckboxes([]);
+    
+    delete saveBtn.dataset.employeeId;
+  }
+  
+  // ✅ Show/hide category access based on admin status
+  const categoryGroup = document.getElementById('categoryAccessGroup');
+  if (categoryGroup) {
+    categoryGroup.style.display = adminCheck.checked ? 'none' : 'block';
+  }
+  
+  // ✅ Listen for admin checkbox changes
+  adminCheck.onchange = function() {
+    if (categoryGroup) {
+      categoryGroup.style.display = this.checked ? 'none' : 'block';
+    }
+  };
+  
+  modal.style.display = 'flex';
+  setTimeout(() => nameInput.focus(), 300);
+}
 // Save Employee (Add or Update)
 async function saveEmployee() {
   const nameInput = document.getElementById('employeeNameInput');
@@ -9532,7 +9984,10 @@ async function saveEmployee() {
   const isAdmin = adminCheck.checked;
   const employeeId = saveBtn.dataset.employeeId ? parseInt(saveBtn.dataset.employeeId) : null;
   
-  // Validate
+  // ✅ Get allowed categories from checkboxes
+  const allowedCategories = isAdmin ? null : getSelectedCategoriesFromForm();
+  
+  // Validate name
   if (!name) {
     errorDiv.innerText = '❌ Employee name is required.';
     errorDiv.style.display = 'block';
@@ -9541,6 +9996,7 @@ async function saveEmployee() {
     return;
   }
   
+  // Validate PIN
   if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
     errorDiv.innerText = '❌ Please enter a valid 4-digit numeric PIN.';
     errorDiv.style.display = 'block';
@@ -9549,7 +10005,7 @@ async function saveEmployee() {
     return;
   }
   
-  // Check for duplicate PIN (if adding or changing PIN)
+  // Check for duplicate PIN
   const existingEmployee = cachedEmployees.find(e => e.pin === pin && e.id !== employeeId);
   if (existingEmployee) {
     errorDiv.innerText = `❌ PIN "${pin}" is already assigned to ${existingEmployee.name}.`;
@@ -9569,6 +10025,15 @@ async function saveEmployee() {
     return;
   }
   
+  // ✅ Warn if non-admin has no categories selected
+  if (!isAdmin && allowedCategories && allowedCategories.length === 0) {
+    const confirm = await showConfirmModal(
+      '⚠️ No Categories Selected',
+      'This employee will have access to NO categories and won\'t be able to see any products. Are you sure?'
+    );
+    if (!confirm) return;
+  }
+  
   // Reset error styles
   nameInput.style.borderColor = '#e2e8f0';
   pinInput.style.borderColor = '#e2e8f0';
@@ -9581,13 +10046,14 @@ async function saveEmployee() {
       name: name,
       pin: pin,
       store: isAdmin ? null : store,
-      is_admin: isAdmin
+      is_admin: isAdmin,
+      // ✅ Include allowed categories (null means all allowed)
+      allowed_categories: isAdmin ? null : (allowedCategories && allowedCategories.length > 0 ? allowedCategories : null)
     };
     
     let result;
     
     if (employeeId) {
-      // Update existing employee
       const { data, error } = await supabase
         .from('employees')
         .update(employeeData)
@@ -9597,17 +10063,16 @@ async function saveEmployee() {
       if (error) throw error;
       result = data;
       
-      // Update current employee if it's the logged-in user
       if (currentEmployee && currentEmployee.id === employeeId) {
         currentEmployee.name = name;
         currentEmployee.pin = pin;
         currentEmployee.isAdmin = isAdmin;
+        currentEmployee.allowed_categories = employeeData.allowed_categories;
         document.getElementById('employeeNameHeader').innerText = `👤 ${currentEmployee.name}`;
       }
       
       await showAlertModal('✅ Employee Updated', `Employee "${name}" has been updated successfully.`);
     } else {
-      // Add new employee
       const { data, error } = await supabase
         .from('employees')
         .insert([employeeData])
@@ -9619,7 +10084,6 @@ async function saveEmployee() {
       await showAlertModal('✅ Employee Added', `Employee "${name}" has been added successfully.`);
     }
     
-    // Refresh employee cache
     await loadAndCacheEmployees(true);
     renderEmployeeList();
     closeEmployeeFormModal();
@@ -11184,6 +11648,13 @@ function showSpecialPromoModal() {
 function applyCarAromaticPromo() {
   const targetCategory = "CAR AROMATIC";
   const fixedPrice = 2;
+  
+  // ✅ Check category access first
+  if (!canAccessCategory(targetCategory)) {
+    document.getElementById('promoMessage').innerText = `🚫 You don't have access to "${targetCategory}".`;
+    document.getElementById('promoMessage').style.display = 'block';
+    return;
+  }
 
   const item = cart.find(i => i.product.category === targetCategory);
   if (!item) {
@@ -11207,6 +11678,13 @@ function applyCarAromaticPromo() {
 function apply15mlPerfumeEdpPromo() {
   const targetCategory = "15ML PERFUME EDP";
   const fixedPrice = 8;
+  
+  // ✅ Check category access first
+  if (!canAccessCategory(targetCategory)) {
+    document.getElementById('promoMessage').innerText = `🚫 You don't have access to "${targetCategory}".`;
+    document.getElementById('promoMessage').style.display = 'block';
+    return;
+  }
 
   const item = cart.find(i => i.product.category === targetCategory);
   if (!item) {
@@ -14825,56 +15303,7 @@ function toggleInventoryMode() {
   refreshCategoryHighlighting();
   renderProductGrid();
 }
-function openEmployeeFormModal(employee = null) {
-  const modal = document.getElementById('employeeFormModal');
-  const title = document.getElementById('employeeFormTitle');
-  const nameInput = document.getElementById('employeeNameInput');
-  const pinInput = document.getElementById('employeePinInput');
-  const storeSelect = document.getElementById('employeeStoreSelect');
-  const adminCheck = document.getElementById('employeeAdminCheck');
-  const saveBtn = document.getElementById('saveEmployeeBtn');
-  const errorDiv = document.getElementById('employeeFormError');
-  
-  // Clear error
-  errorDiv.style.display = 'none';
-  errorDiv.innerText = '';
-  
-  // Reset PIN visibility
-  if (pinVisible) {
-    togglePinVisibility();
-  }
-  if (pinHideTimeout) {
-    clearTimeout(pinHideTimeout);
-  }
-  
-  // Populate store dropdown
-  populateEmployeeStoreSelect();
-  
-  if (employee) {
-    // Edit mode
-    title.innerText = '✏️ Edit Employee';
-    saveBtn.innerText = '💾 Update Employee';
-    nameInput.value = employee.name || '';
-    pinInput.value = employee.pin || '';
-    storeSelect.value = employee.store || '';
-    adminCheck.checked = employee.isAdmin || employee.is_admin || false;
-    
-    // Store employee ID for update
-    saveBtn.dataset.employeeId = employee.id;
-  } else {
-    // Add mode
-    title.innerText = '➕ Add New Employee';
-    saveBtn.innerText = '💾 Save Employee';
-    nameInput.value = '';
-    pinInput.value = '';
-    storeSelect.value = '';
-    adminCheck.checked = false;
-    delete saveBtn.dataset.employeeId;
-  }
-  
-  modal.style.display = 'flex';
-  setTimeout(() => nameInput.focus(), 300);
-}
+
 async function bulkUpdateStock(productUpdates) {
   // productUpdates: [{ productId, newStock, delta }]
   if (!productUpdates || productUpdates.length === 0) return;
@@ -15157,7 +15586,24 @@ document.getElementById('employeeManagementModal')?.addEventListener('click', (e
     closeEmployeeManagementModal();
   }
 });
+// ✅ Category access buttons
+document.getElementById('selectAllCategoriesBtn')?.addEventListener('click', () => {
+  document.querySelectorAll('.category-access-checkbox').forEach(cb => {
+    cb.checked = true;
+    const label = cb.closest('label');
+    label.style.background = '#f0fdf4';
+    label.style.borderColor = '#10b981';
+  });
+});
 
+document.getElementById('clearAllCategoriesBtn')?.addEventListener('click', () => {
+  document.querySelectorAll('.category-access-checkbox').forEach(cb => {
+    cb.checked = false;
+    const label = cb.closest('label');
+    label.style.background = '#fef2f2';
+    label.style.borderColor = '#fecaca';
+  });
+});
 document.getElementById('employeeFormModal')?.addEventListener('click', (e) => {
   if (e.target === document.getElementById('employeeFormModal')) {
     closeEmployeeFormModal();
@@ -16498,6 +16944,13 @@ async function processBarcode() {
   const product = products.find(p => String(p.id) === code);
   if (!product) {
     showAlertModal('Barcode not found', `Product with ID ${code} does not exist.`);
+    resetBarcodeBuffer();
+    return;
+  }
+
+  // ✅ ADD: Check category access before allowing product scan
+  if (!canAccessCategory(product.category)) {
+    await showCategoryAccessDenied(product.category);
     resetBarcodeBuffer();
     return;
   }
