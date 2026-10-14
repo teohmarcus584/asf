@@ -4722,32 +4722,32 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
   // Category View (when no category selected, not in inventory mode, no search)
    // Category View (when no category selected, not in inventory mode, no search)
   if (selectedCategory === 'all' && !inventoryMode && !searchTerm) {
-    let categories = [...new Set(products.map(p => p.category))];
+  let categories = [...new Set(products.map(p => p.category))];
+  
+  // Apply store filter to categories FIRST
+  if (storeFilterActive && !showAllProductsInInventory) {
+    const storeObj = stores.find(s => s.store_id === currentStore);
+    let availabilityKey = `available_${currentStore}`;
     
-    // ✅ ADD: Filter categories by employee access
-    categories = getAccessibleCategories(categories);
-    
-    // Apply store filter to categories
-    if (storeFilterActive && !showAllProductsInInventory) {
-      const storeObj = stores.find(s => s.store_id === currentStore);
-      let availabilityKey = `available_${currentStore}`;
-      
-      if (storeObj && storeObj.slot_number) {
-        const slotNumStr = String(storeObj.slot_number).padStart(2, '0');
-        availabilityKey = `available_store_${slotNumStr}`;
-      }
-      
-      const availableProducts = products.filter(p => p[availabilityKey] !== false);
-      categories = [...new Set(availableProducts.map(p => p.category))];
+    if (storeObj && storeObj.slot_number) {
+      const slotNumStr = String(storeObj.slot_number).padStart(2, '0');
+      availabilityKey = `available_store_${slotNumStr}`;
     }
     
-    let filteredCategories = categories;
-    
-    if (searchTerm) {
-      filteredCategories = filteredCategories.filter(cat =>
-        cat.toLowerCase().includes(searchTerm)
-      );
-    }
+    const availableProducts = products.filter(p => p[availabilityKey] !== false);
+    categories = [...new Set(availableProducts.map(p => p.category))];
+  }
+  
+  // ✅ APPLY ACCESS FILTER LAST — so nothing can overwrite it
+  categories = getAccessibleCategories(categories);
+  
+  let filteredCategories = categories;
+  
+  if (searchTerm) {
+    filteredCategories = filteredCategories.filter(cat =>
+      cat.toLowerCase().includes(searchTerm)
+    );
+  }
     
     if (filteredCategories.length === 0) {
       productGridEl.innerHTML = '<div style="text-align:center; padding:20px;">No categories match your search.</div>';
@@ -5700,7 +5700,7 @@ function updateCategoryDropdown() {
   const previousSelected = categorySelect.value;
   let categories = [...new Set(products.map(p => p.category))].sort();
   
-  // ✅ ADD: Filter categories by employee access
+   // ✅ THIS LINE MUST EXIST
   categories = getAccessibleCategories(categories);
   
   categorySelect.innerHTML = '<option value="all">📂 All Categories</option>';
