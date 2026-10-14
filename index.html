@@ -2501,8 +2501,9 @@ body:not(.admin-mode) #adminReportModal .stat-item.breakdown {
           <div class="cart-header-buttons"><button id="customerBtn" class="cart-header-btn">👤 Customer</button><button id="clearCartBtn" class="cart-header-btn">🗑️ Clear</button></div>
         </div>
       </div>
-      <div id="customerInfoDisplay" style="display: none;"></div>
+          <div id="customerInfoDisplay" style="display: none;"></div>
       <div id="cartNormalContent">
+        <div id="cartStoreSplit" style="display: none;"></div>
         <div id="cartItemsContainer" class="cart-items">Cart is empty</div>
         <div class="cart-summary" id="cartSummary">
   <div class="summary-row"><span>Subtotal</span><span id="subtotal">RM 0.00</span></div>
@@ -3365,8 +3366,13 @@ let preloadedReportCache = null;
 let stores = [];
 let storeIdToName = {};
 let storeNameToId = {};
-let storeFilterActive = true; // Default: ON (show only store-specific products)
-let showAllProductsInInventory = false; // Override in inventory mode
+let storeFilterActive = true;
+let showAllProductsInInventory = false;
+
+// ✅ NEW: Category → Store mapping
+let categoryStoreMap = {};        // { "CAR AROMATIC": "queens", ... }
+let categoryStoreMapLastFetched = 0;
+const CATEGORY_STORE_MAP_TTL = 5 * 60 * 1000; // 5 min
 // ==================== DOM ELEMENTS ====================
 const productGridEl = document.getElementById('productGrid');
 const cartContainer = document.getElementById('cartItemsContainer');
@@ -3694,6 +3700,45 @@ async function loadAndCacheEmployees(force = false) {
   }
   return [];
 }
+
+// ✅ NEW: Fetch category → store mappings from Supabase
+async function fetchCategoryStoreMap(force = false) {
+  const now = Date.now();
+  if (!force && categoryStoreMapLastFetched > 0 &&
+      (now - categoryStoreMapLastFetched) < CATEGORY_STORE_MAP_TTL &&
+      Object.keys(categoryStoreMap).length > 0) {
+    return categoryStoreMap;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('category_store_mapping')
+      .select('category, store_id');
+
+    if (error) throw error;
+
+    const map = {};
+    (data || []).forEach(row => {
+      map[row.category] = row.store_id;
+    });
+
+    categoryStoreMap = map;
+    categoryStoreMapLastFetched = now;
+    console.log('✅ Category→Store map loaded:', categoryStoreMap);
+    return map;
+  } catch (err) {
+    console.error('❌ Failed to load category→store map:', err);
+    return categoryStoreMap || {};
+  }
+}
+
+// ✅ NEW: Get assigned store for a category (falls back to currentStore)
+function getStoreForCategory(category) {
+  if (category && categoryStoreMap[category]) {
+    return categoryStoreMap[category];
+  }
+  return currentStore; // Fallback
+}
 // ==================== FINGERPRINT MAPPINGS (Supabase) ====================
 
 async function loadFingerprintMappings(force = false) {
@@ -4017,19 +4062,36 @@ async function switchToEmployee(newEmployee) {
 function applyRoleBasedUI() {
   if (!currentEmployee) return;
 
-  // Admin mode class on body
+  // ============================================================
+  // ✅ Admin mode class on body
+  // ============================================================
   if (currentEmployee.isAdmin) {
     document.body.classList.add('admin-mode');
   } else {
     document.body.classList.remove('admin-mode');
   }
 
-  // Side menu buttons - Inventory and Collection (Admin only)
+  // ============================================================
+  // ✅ Store filter default based on role
+  //   - Admin: OFF (see all products across all stores)
+  //   - Non-admin: ON (locked to their assigned store)
+  // ============================================================
+  if (currentEmployee.isAdmin) {
+    storeFilterActive = false;
+    showAllProductsInInventory = false;
+  } else {
+    storeFilterActive = true;
+    showAllProductsInInventory = false;
+  }
+
+  // ============================================================
+  // ✅ Side menu buttons - Inventory / Collection / Employees / Stock Take Approval
+  // ============================================================
   const sideInventory = document.getElementById('sideInventoryBtn');
   const sideCollection = document.getElementById('sideCollectionBtn');
   const sideEmployee = document.getElementById('sideEmployeeBtn');
   const sideStockTakeApproval = document.getElementById('sideStockTakeApprovalBtn');
-  
+
   if (currentEmployee.isAdmin) {
     if (sideInventory) sideInventory.style.display = 'flex';
     if (sideCollection) sideCollection.style.display = 'flex';
@@ -4044,7 +4106,9 @@ function applyRoleBasedUI() {
     storeSelect.disabled = true;
   }
 
-  // Report Modal - Store and Employee filters (Admin only)
+  // ============================================================
+  // ✅ Report Modal - Store and Employee filters (Admin only)
+  // ============================================================
   const reportStoreFilter = document.getElementById('reportStoreFilterGroup');
   const employeeFilterGroup = document.getElementById('employeeFilterGroup');
   if (currentEmployee.isAdmin) {
@@ -4055,7 +4119,9 @@ function applyRoleBasedUI() {
     if (employeeFilterGroup) employeeFilterGroup.style.display = 'none';
   }
 
-  // Report Modal - Payment breakdown rows (Admin only)
+  // ============================================================
+  // ✅ Report Modal - Payment breakdown rows (Admin only)
+  // ============================================================
   const paymentRows = document.querySelectorAll('#adminReportModal .stat-item.breakdown');
   if (currentEmployee.isAdmin) {
     paymentRows.forEach(row => row.style.display = 'flex');
@@ -4063,7 +4129,9 @@ function applyRoleBasedUI() {
     paymentRows.forEach(row => row.style.display = 'none');
   }
 
-  // Settlement Modal - Store select (Admin only)
+  // ============================================================
+  // ✅ Settlement Modal - Store select (Admin only)
+  // ============================================================
   const settlementStoreSelect = document.getElementById('settlementStoreSelect');
   if (settlementStoreSelect) {
     if (!currentEmployee.isAdmin) {
@@ -4074,7 +4142,9 @@ function applyRoleBasedUI() {
     }
   }
 
-  // Settlement Modal - System totals display
+  // ============================================================
+  // ✅ Settlement Modal - System totals display
+  // ============================================================
   const systemTotalsDiv = document.getElementById('systemTotalsDisplay');
   if (systemTotalsDiv) {
     if (!currentEmployee.isAdmin) {
@@ -4096,7 +4166,9 @@ function applyRoleBasedUI() {
     }
   }
 
-  // Receipts Modal - Employee filter (Admin only)
+  // ============================================================
+  // ✅ Receipts Modal - Employee / Store filters (Admin only)
+  // ============================================================
   const receiptsEmpFilter = document.getElementById('receiptsEmployeeFilter');
   const receiptsStoreFilter = document.getElementById('receiptsStoreFilterGroup');
   if (receiptsEmpFilter && receiptsStoreFilter) {
@@ -4120,23 +4192,43 @@ function applyRoleBasedUI() {
     }
   }
 
-  // Store Management Button (Inventory mode)
+  // ============================================================
+  // ✅ Store Management Button (Inventory mode, admin only)
+  // ============================================================
   const manageStoresBtn = document.getElementById('manageStoresBtn');
   if (manageStoresBtn) {
     manageStoresBtn.style.display = (currentEmployee.isAdmin && inventoryMode) ? 'inline-flex' : 'none';
   }
 
-  // Store Filter Toggle Button (Inventory mode)
+  // ============================================================
+  // ✅ Store Filter Toggle Button
+  //   - Admin: visible in BOTH normal and inventory modes
+  //   - Non-admin: always hidden (locked to their store)
+  // ============================================================
   const storeFilterBtn = document.getElementById('storeFilterToggleBtn');
   if (storeFilterBtn) {
-    if (inventoryMode) {
+    if (currentEmployee.isAdmin) {
       storeFilterBtn.style.display = 'inline-flex';
+
+      if (inventoryMode) {
+        storeFilterBtn.textContent = showAllProductsInInventory
+          ? '📋 Show All Products'
+          : '🏪 Store Filter: ON';
+        storeFilterBtn.classList.toggle('active', showAllProductsInInventory);
+      } else {
+        storeFilterBtn.textContent = storeFilterActive
+          ? '🏪 Store Filter: ON'
+          : '🏪 Store Filter: OFF (All Products)';
+        storeFilterBtn.classList.toggle('active', !storeFilterActive);
+      }
     } else {
       storeFilterBtn.style.display = 'none';
     }
   }
 
-  // Low Stock Toggle Button (Inventory mode)
+  // ============================================================
+  // ✅ Low Stock Toggle Button (Inventory mode only)
+  // ============================================================
   const lowStockBtn = document.getElementById('lowStockToggleBtn');
   if (lowStockBtn) {
     if (inventoryMode) {
@@ -4146,26 +4238,32 @@ function applyRoleBasedUI() {
     }
   }
 
-  // Edit Product Header Button (Inventory mode)
+  // ============================================================
+  // ✅ Edit Product Header Button (Inventory mode only)
+  // ============================================================
   const editProductBtn = document.getElementById('editProductHeaderBtn');
   if (editProductBtn) {
     editProductBtn.style.display = inventoryMode ? 'inline-flex' : 'none';
   }
 
-  // Non-Admin Stats Cards in Report
+  // ============================================================
+  // ✅ Non-Admin Stats Cards in Report
+  // ============================================================
   const nonAdminStatsCards = document.getElementById('nonAdminStatsCards');
   const nonAdminDateRange = document.getElementById('nonAdminDateRange');
   if (nonAdminStatsCards && nonAdminDateRange) {
     if (!currentEmployee.isAdmin) {
       nonAdminStatsCards.style.display = 'block';
       nonAdminDateRange.style.display = 'block';
+
       // Hide payment breakdown for non-admin
       const allBreakdownRows = document.querySelectorAll('#adminReportModal .stat-item.breakdown');
       allBreakdownRows.forEach(row => {
         const labelSpan = row.querySelector('span:first-child');
         if (labelSpan) {
           const text = labelSpan.innerText.trim();
-          if (text.includes('Cash') || text.includes('Card') || text.includes('QR Pay') || text.includes('Alipay')) {
+          if (text.includes('Cash') || text.includes('Card') ||
+              text.includes('QR Pay') || text.includes('Alipay')) {
             row.style.display = 'none';
           }
         }
@@ -4176,7 +4274,9 @@ function applyRoleBasedUI() {
     }
   }
 
-  // Report Modal - Refresh if open
+  // ============================================================
+  // ✅ Report Modal - Refresh if open
+  // ============================================================
   const reportModal = document.getElementById('adminReportModal');
   if (reportModal && reportModal.style.display === 'flex') {
     if (window.preloadedReportCache) window.preloadedReportCache = null;
@@ -4187,23 +4287,26 @@ function applyRoleBasedUI() {
     }, 50);
   }
 
-  // Receipts Modal - Update if open
+  // ============================================================
+  // ✅ Receipts Modal - Update if open
+  // ============================================================
   const receiptsModal = document.getElementById('receiptsModal');
   if (receiptsModal && receiptsModal.style.display === 'flex') {
-    // Re-populate employee dropdown for admin
     if (currentEmployee.isAdmin) {
       populateReceiptsEmployeeDropdown();
     }
-    // Refresh receipts
     updateReceipts();
   }
 
-  // Employee Name Header
+  // ============================================================
+  // ✅ Employee Name Header
+  // ============================================================
   document.getElementById('employeeNameHeader').innerText = `👤 ${currentEmployee.name}`;
 
-  // Update sold by select if needed
+  // ============================================================
+  // ✅ Update sold by select if needed
+  // ============================================================
   if (soldBySelectCart && currentEmployee) {
-    // Make sure the current employee is selected in the dropdown
     const options = soldBySelectCart.querySelectorAll('option');
     let found = false;
     for (const opt of options) {
@@ -4214,7 +4317,6 @@ function applyRoleBasedUI() {
       }
     }
     if (!found && options.length > 0) {
-      // If not found, try to add it
       const option = document.createElement('option');
       option.value = currentEmployee.id;
       option.textContent = `${currentEmployee.name} (ID: ${currentEmployee.id})`;
@@ -4222,6 +4324,14 @@ function applyRoleBasedUI() {
       soldBySelectCart.value = currentEmployee.id;
     }
   }
+
+  // ============================================================
+  // ✅ Re-render product grid so store filter change takes effect
+  // ============================================================
+  renderProductGrid();
+
+  console.log('✅ applyRoleBasedUI done. storeFilterActive:', storeFilterActive,
+              '| showAllProductsInInventory:', showAllProductsInInventory);
 }
 
 // Helper function to populate receipts employee dropdown
@@ -6117,6 +6227,7 @@ function updateCartUI() {
     customDiscountRow.style.display = 'none';
     if (staffDiscountRow) staffDiscountRow.style.display = 'none';
     totalSpan.innerText = `RM 0.00`;
+	renderCartStoreSplit();
     return;
   }
 
@@ -6395,7 +6506,7 @@ function updateCartUI() {
   }
 
   totalSpan.innerText = `RM ${total.toFixed(2)}`;
-
+  renderCartStoreSplit();
   // Event listeners
   document.querySelectorAll('.qty-btn').forEach(btn => {
     btn.removeEventListener('click', handleQtyClick);
@@ -6720,6 +6831,97 @@ function showPaymentModal(totalAmount) {
     checkoutLock = false;
   };
 }
+// ============================================================
+// ✅ NEW: Build per-store breakdown from sale items
+// ============================================================
+function buildStoreBreakdown(saleItems) {
+  const breakdown = {}; // { store_id: { items: [], total: 0 } }
+
+  for (const item of saleItems) {
+    const storeId = getStoreForCategory(item.category);
+
+    if (!breakdown[storeId]) {
+      breakdown[storeId] = { items: [], total: 0 };
+    }
+
+    breakdown[storeId].items.push({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      quantity: item.quantity,
+      regular_quantity: item.regular_quantity,
+      special_quantity: item.special_quantity,
+      free_quantity: item.free_quantity,
+      price: item.price,
+      effective_price: item.effective_price,
+      special_label: item.special_label,
+      total: item.total,
+      is_special_offer: item.is_special_offer,
+      is_free_offer: item.is_free_offer,
+      offer_state: item.offer_state,
+      special_price_active: item.special_price_active
+    });
+    breakdown[storeId].total += item.total;
+  }
+
+  return breakdown;
+}
+
+// ============================================================
+// ✅ NEW: Deduct stock from EACH item's assigned store column
+// ============================================================
+async function deductStockPerStore(saleItems) {
+  const deductionByStore = {}; // { store_id: { product_id: qty } }
+
+  for (const item of saleItems) {
+    const storeId = getStoreForCategory(item.category);
+    if (!deductionByStore[storeId]) deductionByStore[storeId] = {};
+    deductionByStore[storeId][item.id] =
+      (deductionByStore[storeId][item.id] || 0) + item.quantity;
+  }
+
+  for (const [storeId, productQtys] of Object.entries(deductionByStore)) {
+    const storeObj = stores.find(s => s.store_id === storeId);
+    let stockColumn = `stock_${storeId}`;
+    if (storeObj && storeObj.slot_number) {
+      const slotNumStr = String(storeObj.slot_number).padStart(2, '0');
+      stockColumn = `stock_store_${slotNumStr}`;
+    }
+
+    for (const [productId, qty] of Object.entries(productQtys)) {
+      const product = products.find(p => p.id == productId);
+      if (!product) continue;
+
+      const newStock = (product[stockColumn] || 0) - qty;
+
+      const updateData = {};
+      updateData[stockColumn] = newStock;
+
+      supabase
+        .from('products')
+        .update(updateData)
+        .eq('id', productId)
+        .then(({ error }) => {
+          if (error) {
+            console.error(`❌ Stock update failed for ${product.name} @ ${storeId}:`, error);
+          } else {
+            console.log(`✅ Stock deducted: ${product.name} @ ${storeId} → ${newStock}`);
+          }
+        });
+
+      // Update local cache
+      product[stockColumn] = newStock;
+
+      // If the item belongs to the store currently selected, update the main stock field
+      if (storeId === currentStore) {
+        product.stock = newStock;
+      }
+
+      checkAndNotifyOutOfStock(product.id, product.name, newStock);
+    }
+  }
+}
+
 async function saveTransactionToSheet(transaction) {
   try {
     console.log('💾 Saving transaction:', transaction.transaction_id);
@@ -6804,6 +7006,7 @@ async function saveTransactionToSheet(transaction) {
     return false;
   }
 }
+
 async function completeCheckout(paymentMethod, cashReceived) {
   if (checkoutLock) {
     console.warn('Checkout already in progress, ignoring duplicate call.');
@@ -6839,8 +7042,7 @@ async function completeCheckout(paymentMethod, cashReceived) {
       } catch(e) {}
     }
     const finalCustomer = customerToUse || sessionCustomer;
-    
-    // ✅ Get customer phone number and ID
+
     const customerPhone = finalCustomer ? finalCustomer.phone : null;
     const customerId = finalCustomer ? finalCustomer.id : null;
 
@@ -6848,7 +7050,7 @@ async function completeCheckout(paymentMethod, cashReceived) {
     const saleItems = cart.map(item => {
       let specialPrice = null;
       let specialLabel = null;
-      
+
       if (item.product.category === "100ML PERFUME EDP" || item.product.category === "50ML PERFUME EDP") {
         specialPrice = 1;
         specialLabel = "RM 1";
@@ -6859,10 +7061,10 @@ async function completeCheckout(paymentMethod, cashReceived) {
         specialPrice = 5;
         specialLabel = "RM 5";
       }
-      
+
       const isEligibleForSpecial = specialPrice !== null;
       const isThreeStateItem = item.product.category === "CAR AROMATIC" || item.product.category === "15ML PERFUME EDP";
-      
+
       let specialCount = 0;
       let regularCount = item.quantity;
       let freeCount = item.freeQuantity || 0;
@@ -6870,7 +7072,7 @@ async function completeCheckout(paymentMethod, cashReceived) {
       let isSpecialActive = false;
       let isFreeActive = false;
       let effectivePrice = item.product.price;
-      
+
       if (isThreeStateItem) {
         if (item.offerState === 1) {
           specialCount = Math.min(item.specialQuantity || 1, item.quantity);
@@ -6905,7 +7107,7 @@ async function completeCheckout(paymentMethod, cashReceived) {
         itemTotal = paidQty * item.product.price;
         effectivePrice = item.product.price;
       }
-      
+
       return {
         id: item.product.id,
         category: item.product.category,
@@ -6924,6 +7126,10 @@ async function completeCheckout(paymentMethod, cashReceived) {
         special_price_active: isSpecialActive
       };
     });
+
+    // ✅ NEW: Build per-store breakdown from sale items
+    const storeBreakdown = buildStoreBreakdown(saleItems);
+    console.log('📦 Store breakdown:', storeBreakdown);
 
     // ✅ Build transaction with BOTH customer_id AND customer_phone
     const transaction = {
@@ -6945,21 +7151,24 @@ async function completeCheckout(paymentMethod, cashReceived) {
       employee_id: currentEmployee.id,
       employee_name: currentEmployee.name,
       sales_person_name: salesPersonName || '',
-      sales_person_id: salesPersonId || ''
+      sales_person_id: salesPersonId || '',
+      // ✅ NEW: Multi-store breakdown
+      store_breakdown: storeBreakdown
     };
 
     console.log('💾 Transaction with customer:', {
       transaction_id: transactionId,
       customer_id: customerId,
       customer_phone: customerPhone,
-      total: totalAmount
+      total: totalAmount,
+      store_count: Object.keys(storeBreakdown).length
     });
 
     // Print receipt
     let receiptPrinted = false;
     if (window.printerAPI?.isConnected && window.printerAPI.printReceipt) {
-      const transactionWithName = { 
-        ...transaction, 
+      const transactionWithName = {
+        ...transaction,
         employee_name: currentEmployee.name,
         store: currentStore
       };
@@ -6980,8 +7189,8 @@ async function completeCheckout(paymentMethod, cashReceived) {
           await connectPrinter();
           hideLoading();
           await showAlertModal('✅ Connected', 'Printer connected successfully!');
-          const transactionWithName = { 
-            ...transaction, 
+          const transactionWithName = {
+            ...transaction,
             employee_name: currentEmployee.name,
             store: currentStore
           };
@@ -7004,48 +7213,9 @@ async function completeCheckout(paymentMethod, cashReceived) {
     hideLoading();
 
     if (success) {
-      // ✅ STOCK UPDATE
-      console.log('🔄 Updating stock for items...');
-      
-      const currentStoreObj = stores.find(s => s.store_id === currentStore);
-      let stockColumn = `stock_${currentStore}`;
-      
-      if (currentStoreObj && currentStoreObj.slot_number) {
-        const slotNumStr = String(currentStoreObj.slot_number).padStart(2, '0');
-        stockColumn = `stock_store_${slotNumStr}`;
-        console.log(`📦 Using slot-based stock column: ${stockColumn}`);
-      } else {
-        console.log(`📦 Using fallback stock column: ${stockColumn}`);
-      }
-      
-      for (let item of saleItems) {
-        const product = products.find(p => p.id == item.id);
-        if (product) {
-          const oldStock = product.stock;
-          const newStock = oldStock - item.quantity;
-          product.stock = newStock;
-          product[stockColumn] = newStock;
-          
-          const updateData = {};
-          updateData[stockColumn] = newStock;
-          
-          supabase
-            .from('products')
-            .update(updateData)
-            .eq('id', product.id)
-            .then(({ error }) => {
-              if (error) {
-                console.error('❌ Error updating stock for', product.name, error);
-              } else {
-                console.log('✅ Stock updated for', product.name, 'new stock:', newStock);
-              }
-            });
-          
-          checkAndNotifyOutOfStock(product.id, product.name, newStock);
-        } else {
-          console.warn('⚠️ Product not found in local cache:', item.id);
-        }
-      }
+      // ✅ NEW: Deduct stock from EACH item's assigned store
+      console.log('🔄 Deducting stock per store...');
+      await deductStockPerStore(saleItems);
 
       localStorage.setItem(`products_${currentStore}`, JSON.stringify({
         timestamp: Date.now(),
@@ -7072,22 +7242,22 @@ async function completeCheckout(paymentMethod, cashReceived) {
         console.log('📋 Receipt:', pendingPrize.receipt);
         console.log('📋 Value:', pendingPrize.value);
         console.log('📋 Name:', pendingPrize.name);
-        
+
         const claimed = await claimPrizeAfterSale(
           pendingPrize.receipt,
           pendingPrize.value,
           totalAmount
         );
-        
+
         if (claimed) {
           console.log('✅ Prize claimed successfully!');
-          await showAlertModal('🎉 Prize Claimed!', 
+          await showAlertModal('🎉 Prize Claimed!',
             `The prize "${pendingPrize.name}" has been successfully claimed.\n` +
             `Receipt: ${pendingPrize.receipt}`
           );
         } else {
           console.warn('⚠️ Prize claim failed, but transaction was saved.');
-          await showAlertModal('⚠️ Prize Not Claimed', 
+          await showAlertModal('⚠️ Prize Not Claimed',
             `Transaction saved, but the prize could not be claimed.\n` +
             `Please manually claim the prize using the receipt: ${pendingPrize.receipt}`
           );
@@ -7096,36 +7266,35 @@ async function completeCheckout(paymentMethod, cashReceived) {
         claimedReceiptInfo = null;
       } else {
         console.log('ℹ️ No pendingPrize found - checking if prize needs to be claimed...');
-        
-        // ✅ Check if there's a lucky draw entry that needs to be claimed
+
         const { data: luckyData, error: luckyError } = await supabase
           .from('lucky_draw_prizes')
           .select('*')
           .eq('receipt', transactionId)
           .maybeSingle();
-        
+
         if (luckyError) {
           console.error('❌ Error checking lucky draw:', luckyError);
         } else if (luckyData && luckyData.claimed === false) {
           console.log('🎯 Found unclaimed prize for this transaction, claiming now...');
           console.log('📋 Prize:', luckyData.prize_label);
           console.log('📋 Store:', luckyData.store);
-          
+
           const claimed = await claimPrizeAfterSale(
             transactionId,
             luckyData.discount_value || 38,
             totalAmount
           );
-          
+
           if (claimed) {
             console.log('✅ Prize claimed successfully!');
-            await showAlertModal('🎉 Prize Claimed!', 
+            await showAlertModal('🎉 Prize Claimed!',
               `The prize "${luckyData.prize_label}" has been successfully claimed.\n` +
               `Receipt: ${transactionId}`
             );
           } else {
             console.warn('⚠️ Prize claim failed for:', transactionId);
-            await showAlertModal('⚠️ Prize Not Claimed', 
+            await showAlertModal('⚠️ Prize Not Claimed',
               `Transaction saved, but the prize could not be claimed.\n` +
               `Please manually claim the prize using the receipt: ${transactionId}`
             );
@@ -7147,7 +7316,7 @@ async function completeCheckout(paymentMethod, cashReceived) {
       console.log('🔍 customerId:', customerId);
       console.log('🔍 customerPhone:', customerPhone);
       console.log('🔍 totalAmount:', totalAmount);
-      
+
       if (customerPhone) {
         try {
           const { data: customerData, error: customerError } = await supabase
@@ -7155,12 +7324,12 @@ async function completeCheckout(paymentMethod, cashReceived) {
             .select('id, points, name, phone')
             .eq('phone', customerPhone)
             .maybeSingle();
-          
+
           if (customerError) {
             console.error('❌ Error finding customer:', customerError);
             throw customerError;
           }
-          
+
           if (!customerData) {
             console.warn('⚠️ Customer not found with phone:', customerPhone);
             if (customerId) {
@@ -7170,7 +7339,7 @@ async function completeCheckout(paymentMethod, cashReceived) {
                 .select('id, points, name, phone')
                 .eq('id', customerId)
                 .maybeSingle();
-              
+
               if (idError || !idData) {
                 throw new Error('Customer not found by phone or ID');
               }
@@ -7179,9 +7348,9 @@ async function completeCheckout(paymentMethod, cashReceived) {
               throw new Error('Customer not found');
             }
           }
-          
+
           console.log('✅ Customer found:', customerData);
-          
+
           const pointsEarned = Math.floor(totalAmount);
           console.log('========================================');
           console.log('⭐ CUSTOMER POINTS UPDATE START');
@@ -7190,43 +7359,43 @@ async function completeCheckout(paymentMethod, cashReceived) {
           console.log('🆔 ID:', customerData.id);
           console.log('💰 Total Amount:', totalAmount);
           console.log('⭐ Points to Earn:', pointsEarned);
-          
+
           const currentPoints = customerData.points || 0;
           const newPoints = currentPoints + pointsEarned;
-          
+
           console.log('📊 Current points:', currentPoints);
           console.log('📊 New points:', newPoints);
-          
+
           const { data: updateData, error: updateError } = await supabase
             .from('customers')
             .update({ points: newPoints })
             .eq('id', customerData.id)
             .select();
-          
+
           if (updateError) {
             console.error('❌ Error updating customer points:', updateError);
             throw updateError;
           }
-          
+
           console.log('✅ Supabase update response:', updateData);
-          
+
           const { data: verifyData, error: verifyError } = await supabase
             .from('customers')
             .select('id, points')
             .eq('id', customerData.id)
             .maybeSingle();
-          
+
           if (verifyError) {
             console.error('❌ Error verifying points:', verifyError);
           } else {
             console.log('✅ Verified points:', verifyData);
           }
-          
+
           const updatedCustomer = {
             ...customerData,
             points: newPoints
           };
-          
+
           if (selectedCustomer) {
             selectedCustomer.points = newPoints;
             selectedCustomer.id = customerData.id;
@@ -7238,21 +7407,21 @@ async function completeCheckout(paymentMethod, cashReceived) {
             window.selectedCustomer.points = newPoints;
             window.selectedCustomer.id = customerData.id;
           }
-          
+
           updateCustomerDisplay();
-          
+
           console.log('✅ Points updated successfully!');
           console.log('⭐ New total points:', newPoints);
           console.log('========================================');
-          
-          await showAlertModal('⭐ Points Earned!', 
+
+          await showAlertModal('⭐ Points Earned!',
             `${customerData.name || 'Customer'} earned ${pointsEarned} points!\n` +
             `Total points: ${newPoints}`
           );
-          
+
         } catch (err) {
           console.error('❌ Failed to update customer points:', err);
-          await showAlertModal('⚠️ Points Update Failed', 
+          await showAlertModal('⚠️ Points Update Failed',
             `Transaction completed but points update failed.\n` +
             `Error: ${err.message || 'Unknown error'}\n` +
             `Please contact support to have points added manually.`
@@ -7261,14 +7430,26 @@ async function completeCheckout(paymentMethod, cashReceived) {
       } else {
         console.log('ℹ️ No customer selected, skipping points update');
       }
-      
+
       renderProductGrid();
-      
-      await showAlertModal('✅ Transaction Complete!', 
+
+      // ✅ NEW: Show store breakdown in the confirmation modal
+      let breakdownText = '';
+      const breakdownEntries = Object.entries(storeBreakdown);
+      if (breakdownEntries.length > 1) {
+        breakdownText = '\n\n📦 Sale attributed to:\n' +
+          breakdownEntries.map(([sid, data]) => {
+            const s = stores.find(x => x.store_id === sid);
+            return `• ${s ? s.name : sid}: RM ${data.total.toFixed(2)}`;
+          }).join('\n');
+      }
+
+      await showAlertModal('✅ Transaction Complete!',
         `Transaction ID: ${transaction.transaction_id}\n` +
         `Total: RM ${totalAmount.toFixed(2)}\n` +
         `Payment: ${paymentMethod}\n` +
-        `Items: ${saleItems.length}`
+        `Items: ${saleItems.length}` +
+        breakdownText
       );
 
     } else {
@@ -7276,8 +7457,8 @@ async function completeCheckout(paymentMethod, cashReceived) {
       pendingSales.push(transaction);
       localStorage.setItem('pendingSales', JSON.stringify(pendingSales));
       await syncPendingSales();
-      
-      await showAlertModal('⚠️ Offline Mode', 
+
+      await showAlertModal('⚠️ Offline Mode',
         'Transaction saved locally and will sync when online.\n' +
         `Transaction ID: ${transaction.transaction_id}`
       );
@@ -13871,16 +14052,21 @@ async function fetchSalesReport(store, employeeId, from, to, unsettledOnly, sile
   if (!silent) showLoading('Loading report...');
   try {
     console.log(`📊 Fetching sales report for store: ${store}, from: ${from}, to: ${to}`);
-    
+
     let query = supabase
       .from('transactions')
       .select('*')
-      .eq('refunded', false)  // ✅ EXCLUDE refunded transactions
-      .gt('total', 0);  // ✅ Only positive totals
-    
-    if (store && store !== 'all') query = query.eq('store', store);
+      .eq('refunded', false)
+      .gt('total', 0);
+
+    // ✅ CHANGED: If store filter is active, include transactions where the top-level
+    // store matches OR the store_breakdown contains that store
+    if (store && store !== 'all') {
+      query = query.or(`store.eq.${store},store_breakdown.not.is.null`);
+    }
+
     if (employeeId && employeeId !== 'all') query = query.eq('employee_id', employeeId);
-    
+
     if (from) {
       const startDate = new Date(from + 'T00:00:00+08:00');
       query = query.gte('timestamp', startDate.toISOString());
@@ -13889,28 +14075,21 @@ async function fetchSalesReport(store, employeeId, from, to, unsettledOnly, sile
       const endDate = new Date(to + 'T23:59:59+08:00');
       query = query.lte('timestamp', endDate.toISOString());
     }
-    
+
     const { data, error } = await query;
     if (error) {
       console.error('❌ fetchSalesReport error:', error);
       throw error;
     }
-    
+
     console.log(`📊 Found ${data?.length || 0} active transactions (excluding refunds)`);
-    
+
     if (!data || data.length === 0) {
       console.log('ℹ️ No transactions found in date range');
       const emptyResult = {
-        totalSales: 0,
-        cashTotal: 0,
-        cardTotal: 0,
-        otherTotal: 0,
-        alipayTotal: 0,
-        refundTotal: 0,
-        refundedTransactionCount: 0,
-        transactionCount: 0,
-        totalItems: 0,
-        netTotal: 0
+        totalSales: 0, cashTotal: 0, cardTotal: 0, otherTotal: 0,
+        alipayTotal: 0, refundTotal: 0, refundedTransactionCount: 0,
+        transactionCount: 0, totalItems: 0, netTotal: 0
       };
       if (!silent) {
         document.getElementById('adminReportTotalSales').innerText = `RM 0.00`;
@@ -13926,8 +14105,7 @@ async function fetchSalesReport(store, employeeId, from, to, unsettledOnly, sile
       }
       return emptyResult;
     }
-    
-    // ✅ Initialize totals
+
     let totalSales = 0;
     let cashTotal = 0;
     let cardTotal = 0;
@@ -13935,69 +14113,99 @@ async function fetchSalesReport(store, employeeId, from, to, unsettledOnly, sile
     let alipayTotal = 0;
     let refundTotal = 0;
     let totalItems = 0;
-    const refundedTransactionIds = new Set();
-    
-    // ✅ Calculate totals (all transactions are already active sales)
+    let transactionCount = 0;
+
     for (const tx of data) {
-      const total = parseFloat(tx.total) || 0;
-      
-      // ✅ All transactions should be positive (filtered by .gt('total', 0))
-      totalSales += total;
-      
+      const txTotal = parseFloat(tx.total) || 0;
       const payment = tx.payment_method;
-      if (payment === 'Cash' || payment === 'cash') {
-        cashTotal += total;
-      } else if (payment === 'Card' || payment === 'card') {
-        cardTotal += total;
-      } else if (payment === 'QR Pay' || payment === 'qr' || payment === 'QR') {
-        otherTotal += total;
-      } else if (payment === 'Alipay' || payment === 'alipay') {
-        alipayTotal += total;
+
+      // ✅ NEW: If we're filtering by a specific store AND the transaction
+      // has a store_breakdown, only count THAT store's portion.
+      let amountForThisStore = txTotal;
+      let itemsForThisStore = 0;
+
+      if (store && store !== 'all' && tx.store_breakdown) {
+        let breakdown = tx.store_breakdown;
+        if (typeof breakdown === 'string') {
+          try { breakdown = JSON.parse(breakdown); } catch(e) { breakdown = null; }
+        }
+
+        if (breakdown && breakdown[store]) {
+          amountForThisStore = parseFloat(breakdown[store].total) || 0;
+          const items = breakdown[store].items || [];
+          for (const it of items) {
+            itemsForThisStore += parseInt(it.quantity) || 0;
+          }
+        } else {
+          // Store not present in breakdown → skip this transaction for this store
+          continue;
+        }
       } else {
-        otherTotal += total;
-      }
-      
-      if (tx.items && Array.isArray(tx.items)) {
-        for (const item of tx.items) {
-          totalItems += parseInt(item.quantity) || 0;
+        // No store filter OR no breakdown → count all items
+        if (tx.items && Array.isArray(tx.items)) {
+          for (const item of tx.items) {
+            itemsForThisStore += parseInt(item.quantity) || 0;
+          }
         }
       }
+
+      totalSales += amountForThisStore;
+      transactionCount++;
+      totalItems += itemsForThisStore;
+
+      if (payment === 'Cash' || payment === 'cash') {
+        cashTotal += amountForThisStore;
+      } else if (payment === 'Card' || payment === 'card') {
+        cardTotal += amountForThisStore;
+      } else if (payment === 'QR Pay' || payment === 'qr' || payment === 'QR') {
+        otherTotal += amountForThisStore;
+      } else if (payment === 'Alipay' || payment === 'alipay') {
+        alipayTotal += amountForThisStore;
+      } else {
+        otherTotal += amountForThisStore;
+      }
     }
-    
-    // ✅ Net total = totalSales (refunds are excluded)
+
     const netTotal = totalSales;
-    
-    console.log(`💰 Total Sales: RM ${totalSales.toFixed(2)}`);
+
+    console.log(`💰 Total Sales (for store "${store}"): RM ${totalSales.toFixed(2)}`);
     console.log(`💰 Net Total: RM ${netTotal.toFixed(2)}`);
-    
-    // ✅ Get refund count from a separate query (for display purposes)
-    const { data: refundData, error: refundError } = await supabase
-      .from('transactions')
-      .select('refund_of')
-      .eq('store', store)
-      .lt('total', 0);
-    
-    if (!refundError && refundData) {
-      refundData.forEach(tx => {
-        if (tx.refund_of) {
-          refundedTransactionIds.add(tx.refund_of);
-        }
-      });
+
+    // ✅ Refund count (informational)
+    const refundedTransactionIds = new Set();
+    try {
+      let refundQuery = supabase
+        .from('transactions')
+        .select('refund_of')
+        .lt('total', 0);
+
+      if (store && store !== 'all') {
+        refundQuery = refundQuery.or(`store.eq.${store},store_breakdown.not.is.null`);
+      }
+
+      const { data: refundData, error: refundError } = await refundQuery;
+      if (!refundError && refundData) {
+        refundData.forEach(tx => {
+          if (tx.refund_of) refundedTransactionIds.add(tx.refund_of);
+        });
+      }
+    } catch (e) {
+      console.warn('Refund count query failed:', e);
     }
-    
+
     const totals = {
       totalSales: totalSales,
       cashTotal: cashTotal,
       cardTotal: cardTotal,
       otherTotal: otherTotal,
       alipayTotal: alipayTotal,
-      refundTotal: 0,  // Refunds are excluded from totals
+      refundTotal: 0,
       refundedTransactionCount: refundedTransactionIds.size,
-      transactionCount: data.length,
+      transactionCount: transactionCount,
       totalItems: totalItems,
       netTotal: netTotal
     };
-    
+
     if (!silent) {
       document.getElementById('adminReportTotalSales').innerText = `RM ${totalSales.toFixed(2)}`;
       document.getElementById('adminReportCashTotal').innerText = `RM ${cashTotal.toFixed(2)}`;
@@ -14006,22 +14214,20 @@ async function fetchSalesReport(store, employeeId, from, to, unsettledOnly, sile
       document.getElementById('adminReportAlipayTotal').innerText = `RM ${alipayTotal.toFixed(2)}`;
       document.getElementById('adminReportRefundTotal').innerText = `RM 0.00`;
       document.getElementById('adminReportRefundedBills').innerText = refundedTransactionIds.size || 0;
-      document.getElementById('adminReportTransactionCount').innerText = data.length || 0;
+      document.getElementById('adminReportTransactionCount').innerText = transactionCount || 0;
       document.getElementById('adminReportTotalItems').innerText = totalItems || 0;
-      
-      // ✅ Update net total in settlement modal
+
       const sysNetTotal = document.getElementById('sysNetTotal');
       if (sysNetTotal) sysNetTotal.innerText = `RM ${netTotal.toFixed(2)}`;
-      
-      // ✅ Also update the settlement fields
+
       document.getElementById('actualCash').value = cashTotal.toFixed(2);
       document.getElementById('actualCard').value = cardTotal.toFixed(2);
       document.getElementById('actualQR').value = otherTotal.toFixed(2);
       document.getElementById('actualAlipay').value = alipayTotal.toFixed(2);
     }
-    
+
     return totals;
-    
+
   } catch (err) {
     console.error('❌ fetchSalesReport error:', err);
     if (!silent) await showAlertModal('Error', 'Failed to load report: ' + err.message);
@@ -14029,6 +14235,125 @@ async function fetchSalesReport(store, employeeId, from, to, unsettledOnly, sile
   } finally {
     if (!silent) hideLoading();
   }
+}
+// ✅ NEW: Build a visual summary of which stores the current cart splits across
+function buildCartStoreSummary() {
+  if (!cart || cart.length === 0) return null;
+
+  const storeSummary = {}; // { store_id: { items: [], total: 0 } }
+
+  cart.forEach(item => {
+    const storeId = getStoreForCategory(item.product.category);
+
+    // Compute item total the same way updateCartUI does
+    let itemTotal = 0;
+    const isThreeStateItem = item.product.category === "CAR AROMATIC" ||
+                             item.product.category === "15ML PERFUME EDP";
+    const isTwoStateItem = item.product.category === "100ML PERFUME EDP" ||
+                           item.product.category === "50ML PERFUME EDP";
+
+    if (isThreeStateItem) {
+      if (item.offerState === 1) {
+        const specialCount = Math.min(item.specialQuantity || 1, item.quantity);
+        const regularCount = item.quantity - specialCount;
+        itemTotal = (regularCount * item.product.price) + (specialCount * (item.specialPrice || 0));
+      } else if (item.offerState === 2) {
+        const freeCount = Math.min(1, item.quantity);
+        itemTotal = (item.quantity - freeCount) * item.product.price;
+      } else {
+        itemTotal = item.quantity * item.product.price;
+      }
+    } else if (isTwoStateItem) {
+      const freeCount = Math.min(item.freeQuantity || 0, item.quantity);
+      itemTotal = (item.quantity - freeCount) * item.product.price;
+    } else if (item.isSpecialOffer && item.specialPriceActive) {
+      const specialCount = Math.min(item.specialQuantity || 1, item.quantity);
+      const regularCount = item.quantity - specialCount;
+      itemTotal = (regularCount * item.product.price) + (specialCount * (item.specialPrice || 0));
+    } else {
+      const freeCount = item.freeQuantity || 0;
+      itemTotal = (item.quantity - freeCount) * item.product.price;
+    }
+
+    if (!storeSummary[storeId]) {
+      storeSummary[storeId] = { items: [], total: 0, quantity: 0 };
+    }
+    storeSummary[storeId].items.push(item);
+    storeSummary[storeId].total += itemTotal;
+    storeSummary[storeId].quantity += item.quantity;
+  });
+
+  return storeSummary;
+}
+
+// ✅ NEW: Render the store split banner in the cart
+function renderCartStoreSplit() {
+  const container = document.getElementById('cartStoreSplit');
+  if (!container) return;
+
+  if (!cart || cart.length === 0) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+
+  const summary = buildCartStoreSummary();
+  if (!summary) {
+    container.style.display = 'none';
+    return;
+  }
+
+  const storeIds = Object.keys(summary);
+
+  // If only 1 store → hide the banner (no split)
+  if (storeIds.length <= 1) {
+    container.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+
+  // Build the visual list
+  let html = `
+    <div style="background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+                border: 1px solid #bfdbfe; border-radius: 16px;
+                padding: 10px 14px; margin: 8px 0 12px 0;">
+      <div style="font-size: 0.8rem; font-weight: 700; color: #1e40af;
+                  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+        <span>📦</span> This sale will split across ${storeIds.length} stores
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+  `;
+
+  storeIds.forEach(storeId => {
+    const data = summary[storeId];
+    const s = stores.find(x => x.store_id === storeId);
+    const name = s ? s.name : storeId;
+    const emoji = getStoreEmoji(storeId);
+
+    html += `
+      <div style="background: white; border-radius: 12px; padding: 6px 12px;
+                  border: 1px solid #e2e8f0; display: flex; align-items: center; gap: 6px;
+                  font-size: 0.8rem;">
+        <span>${emoji}</span>
+        <span style="font-weight: 600; color: #0f172a;">${escapeHtml(name)}</span>
+        <span style="color: #64748b;">•</span>
+        <span style="color: #64748b;">${data.quantity} item${data.quantity > 1 ? 's' : ''}</span>
+        <span style="color: #64748b;">•</span>
+        <span style="font-weight: 700; color: #2c7a4b;">RM ${data.total.toFixed(2)}</span>
+      </div>
+    `;
+  });
+
+  html += `
+      </div>
+      <div style="font-size: 0.7rem; color: #64748b; margin-top: 6px;">
+        Stock will be deducted from each store's own column.
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+  container.style.display = 'block';
 }
 async function fetchSalesChartData(store, employeeId, from, to) {
   try {
@@ -15749,8 +16074,14 @@ document.getElementById('storeFilterToggleBtn').addEventListener('click', functi
     this.classList.toggle('active', showAllProductsInInventory);
     renderProductGrid();
   } else {
-    // In normal mode: toggle store filter
-    toggleStoreFilter();
+    // In normal mode: toggle store filter (admin only)
+    storeFilterActive = !storeFilterActive;
+    this.textContent = storeFilterActive
+      ? '🏪 Store Filter: ON'
+      : '🏪 Store Filter: OFF (All Products)';
+    this.classList.toggle('active', !storeFilterActive);
+    renderProductGrid();
+    console.log(`🔄 Admin store filter: ${storeFilterActive ? 'ON' : 'OFF'}`);
   }
 });
 
@@ -16398,15 +16729,40 @@ async function updateStockOnServer(productId, newStock) {
 // ==================== LOGIN ====================
 
 async function finishLoginAfterVerification() {
+  // ============================================================
+  // ✅ Clear any existing sync interval to avoid duplicates
+  // ============================================================
   if (window.autoSyncInterval) clearInterval(window.autoSyncInterval);
-  
-  // ✅ Force fresh fetch for the (now correctly set) currentStore
-  await loadInitialData(true);
-  
-  soldBySelectCart.value = currentEmployee.id;
 
+  // ============================================================
+  // ✅ Refresh category → store mapping after login
+  //    Needed so getStoreForCategory() works for checkout immediately
+  // ============================================================
+  await fetchCategoryStoreMap(true);
+
+  // ============================================================
+  // ✅ Force fresh fetch for the (now correctly set) currentStore
+  // ============================================================
+  await loadInitialData(true);
+
+  // ============================================================
+  // ✅ Make sure the sales-person dropdown shows the logged-in user
+  // ============================================================
+  if (soldBySelectCart && currentEmployee) {
+    soldBySelectCart.value = currentEmployee.id;
+  }
+
+  // ============================================================
+  // ✅ Apply role-based UI
+  //    - Admin: store filter OFF → sees ALL products
+  //    - Non-admin: locked to their assigned store
+  //    - Also calls renderProductGrid() internally
+  // ============================================================
   applyRoleBasedUI();
 
+  // ============================================================
+  // ✅ Hide payment breakdown rows for non-admin
+  // ============================================================
   if (currentEmployee && !currentEmployee.isAdmin) {
     const paymentRowIds = [
       'adminReportCashTotal',
@@ -16422,6 +16778,9 @@ async function finishLoginAfterVerification() {
     });
   }
 
+  // ============================================================
+  // ✅ Start all background services
+  // ============================================================
   startReceiptPolling();
   updateCartUI();
   checkNotificationSupport();
@@ -16432,8 +16791,26 @@ async function finishLoginAfterVerification() {
   preloadReport();
   enableBarcodeScanner();
   refreshCategoryHighlighting();
-}
 
+  // ============================================================
+  // ✅ Final safety re-render of the product grid
+  //    Ensures filter state is respected after all the above runs
+  // ============================================================
+  renderProductGrid();
+
+  // ============================================================
+  // ✅ Console summary for debugging
+  // ============================================================
+  console.log('✅ finishLoginAfterVerification complete:', {
+    employee: currentEmployee?.name,
+    isAdmin: currentEmployee?.isAdmin,
+    currentStore: currentStore,
+    storeFilterActive: storeFilterActive,
+    showAllProductsInInventory: showAllProductsInInventory,
+    productsLoaded: products.length,
+    categoryStoreMapEntries: Object.keys(categoryStoreMap || {}).length
+  });
+}
 async function loadInitialData(force = false) {
   try {
     const success = await fetchProductsFromSheet(force); // ✅ pass force through
@@ -20039,16 +20416,23 @@ function closeStoreManagementModal() {
 // INITIALIZE DYNAMIC STORES
 // ============================================================
 
+// ============================================================
+// INITIALIZE DYNAMIC STORES
+// ============================================================
+
 async function initializeStores() {
-  // Fetch stores from Supabase
+  // Fetch stores from Supabase (force refresh)
   await fetchStores(true);
-  
-  // Populate all dropdowns
+
+  // ✅ Fetch category → store mapping from Supabase
+  await fetchCategoryStoreMap(true);
+
+  // Populate all dropdowns with dynamic stores
   populateStoreDropdowns();
-  
-  // ✅ RENDER DYNAMIC STORE CARDS
+
+  // ✅ RENDER DYNAMIC STORE CARDS (report summary + collection cash cards)
   renderAllDynamicStoreContent();
-  
+
   // Auto-select store by location
   const closest = await autoSelectStoreByLocationDynamic();
   if (closest) {
@@ -20057,16 +20441,20 @@ async function initializeStores() {
       currentStore = closest;
       document.getElementById('storeSelect').value = closest;
       document.getElementById('selectedStoreDisplay').innerText = store.name;
+      console.log(`📍 Auto-selected store by GPS: ${store.name}`);
     }
   } else if (stores.length > 0) {
-    // Default to first store
+    // Default to first store if GPS fails
     currentStore = stores[0].store_id;
     document.getElementById('storeSelect').value = stores[0].store_id;
     document.getElementById('selectedStoreDisplay').innerText = stores[0].name;
+    console.log(`📍 Defaulted to first store: ${stores[0].name}`);
   }
-  
-  // Load products
+
+  // Load products for the selected store
   await fetchProductsFromSheet(true);
+
+  console.log('✅ Stores initialized. Category→Store map:', categoryStoreMap);
 }
 
 // ============================================================
