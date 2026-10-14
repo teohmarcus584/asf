@@ -3733,11 +3733,34 @@ async function fetchCategoryStoreMap(force = false) {
 }
 
 // ✅ NEW: Get assigned store for a category (falls back to currentStore)
+// ✅ Priority 1: Product's own assigned store
+// ✅ Priority 2: Category mapping (fallback)
+// ✅ Priority 3: currentStore (last resort)
+function getStoreForProduct(item) {
+  if (!item) return currentStore;
+
+  // 1. Product's own assigned store
+  const product = products.find(p => p.id == item.id);
+  if (product && product.assigned_store) {
+    return product.assigned_store;
+  }
+
+  // 2. Category mapping fallback
+  const category = item.category || (product && product.category);
+  if (category && categoryStoreMap[category]) {
+    return categoryStoreMap[category];
+  }
+
+  // 3. Fallback
+  return currentStore;
+}
+
+// Keep for backward compatibility with any other callers
 function getStoreForCategory(category) {
   if (category && categoryStoreMap[category]) {
     return categoryStoreMap[category];
   }
-  return currentStore; // Fallback
+  return currentStore;
 }
 // ==================== FINGERPRINT MAPPINGS (Supabase) ====================
 
@@ -4712,13 +4735,14 @@ async function fetchProductsFromSheet(force = false) {
     if (error) throw error;
     
     // ✅ Build product objects with BOTH slot-based AND old fields
-    products = data.map(p => {
+       products = data.map(p => {
       const product = {
         id: p.id,
         name: p.name,
         price: parseFloat(p.price),
         stock: parseInt(p[stockColumn]) || 0,
-        category: p.category || "Uncategorized"
+        category: p.category || "Uncategorized",
+        assigned_store: p.assigned_store || null  // ✅ NEW
       };
       
       // ✅ IMPORTANT: Add slot-based fields for ALL stores that have slots
@@ -4890,55 +4914,61 @@ if (selectedCategory !== 'all') {
 function renderProductGrid() {
   const searchTerm = searchInput.value.toLowerCase();
   const selectedCategory = categorySelect.value;
-  
+
+  // ============================================================
   // Stock Take Mode
+  // ============================================================
   if (stockTakeMode) {
     renderStockTakeProductGrid();
     return;
   }
-  
- // ✅ HIDE: Silently reset to "all" if employee can't access this category
-if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
-  categorySelect.value = 'all';
-  renderProductGrid();
-  return;
-}
+
+  // ============================================================
+  // ✅ HIDE: Silently reset to "all" if employee can't access this category
+  // ============================================================
+  if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
+    categorySelect.value = 'all';
+    renderProductGrid();
+    return;
+  }
+
+  // ============================================================
   // Category View (when no category selected, not in inventory mode, no search)
-   // Category View (when no category selected, not in inventory mode, no search)
+  // ============================================================
   if (selectedCategory === 'all' && !inventoryMode && !searchTerm) {
-  let categories = [...new Set(products.map(p => p.category))];
-  
-  // Apply store filter to categories FIRST
-  if (storeFilterActive && !showAllProductsInInventory) {
-    const storeObj = stores.find(s => s.store_id === currentStore);
-    let availabilityKey = `available_${currentStore}`;
-    
-    if (storeObj && storeObj.slot_number) {
-      const slotNumStr = String(storeObj.slot_number).padStart(2, '0');
-      availabilityKey = `available_store_${slotNumStr}`;
+    let categories = [...new Set(products.map(p => p.category))];
+
+    // Apply store filter to categories FIRST
+    if (storeFilterActive && !showAllProductsInInventory) {
+      const storeObj = stores.find(s => s.store_id === currentStore);
+      let availabilityKey = `available_${currentStore}`;
+
+      if (storeObj && storeObj.slot_number) {
+        const slotNumStr = String(storeObj.slot_number).padStart(2, '0');
+        availabilityKey = `available_store_${slotNumStr}`;
+      }
+
+      const availableProducts = products.filter(p => p[availabilityKey] !== false);
+      categories = [...new Set(availableProducts.map(p => p.category))];
     }
-    
-    const availableProducts = products.filter(p => p[availabilityKey] !== false);
-    categories = [...new Set(availableProducts.map(p => p.category))];
-  }
-  
-  // ✅ APPLY ACCESS FILTER LAST — so nothing can overwrite it
-  categories = getAccessibleCategories(categories);
-  
-  let filteredCategories = categories;
-  
-  if (searchTerm) {
-    filteredCategories = filteredCategories.filter(cat =>
-      cat.toLowerCase().includes(searchTerm)
-    );
-  }
-    
+
+    // ✅ APPLY ACCESS FILTER LAST — so nothing can overwrite it
+    categories = getAccessibleCategories(categories);
+
+    let filteredCategories = categories;
+
+    if (searchTerm) {
+      filteredCategories = filteredCategories.filter(cat =>
+        cat.toLowerCase().includes(searchTerm)
+      );
+    }
+
     if (filteredCategories.length === 0) {
       productGridEl.innerHTML = '<div style="text-align:center; padding:20px;">No categories match your search.</div>';
       productGridEl.className = 'product-grid';
       return;
     }
-    
+
     let html = '';
     filteredCategories.forEach(cat => {
       const productCount = products.filter(p => p.category === cat).length;
@@ -4953,10 +4983,10 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
         </div>
       `;
     });
-    
+
     productGridEl.innerHTML = html;
     productGridEl.className = 'product-grid';
-    
+
     document.querySelectorAll('.category-card').forEach(card => {
       card.addEventListener('click', () => {
         const category = card.dataset.category;
@@ -4964,54 +4994,57 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
         renderProductGrid();
       });
     });
-    
+
     const backBtn = document.getElementById('backToCategoriesBtn');
     if (backBtn) backBtn.style.display = 'none';
     return;
   }
-  
+
+  // ============================================================
   // Product List/Grid View
+  // ============================================================
   const backBtn = document.getElementById('backToCategoriesBtn');
   if (backBtn) {
     backBtn.style.display = (selectedCategory !== 'all' && !inventoryMode) ? 'inline-flex' : 'none';
   }
-  
+
   // Apply ALL filters
-   // Apply ALL filters
   let filtered = products.slice();
-  
-  // ✅ ADD: 0. Category access filter (must come first)
+
+  // ✅ 0. Category access filter (must come first)
   filtered = filterProductsByCategoryAccess(filtered);
-  
+
   // 1. Store filter
   if (storeFilterActive && !showAllProductsInInventory && !inventoryMode) {
     const storeObj = stores.find(s => s.store_id === currentStore);
     let availabilityKey = `available_${currentStore}`;
-    
+
     if (storeObj && storeObj.slot_number) {
       const slotNumStr = String(storeObj.slot_number).padStart(2, '0');
       availabilityKey = `available_store_${slotNumStr}`;
     }
-    
+
     filtered = filtered.filter(p => p[availabilityKey] !== false);
   }
-  
+
   // 2. Category filter
   if (selectedCategory !== 'all') {
     filtered = filtered.filter(p => p.category === selectedCategory);
   }
-  
+
   // 3. Search filter
   if (searchTerm) {
     filtered = filtered.filter(p => p.name.toLowerCase().includes(searchTerm));
   }
-  
+
   // 4. Low stock filter
   if (lowStockFilterActive) {
     filtered = filtered.filter(p => p.stock < LOW_STOCK_THRESHOLD);
   }
-  
+
+  // ============================================================
   // Check if products are loaded
+  // ============================================================
   if (products.length === 0) {
     productGridEl.innerHTML = `
       <div style="text-align:center; padding:20px;">
@@ -5024,37 +5057,37 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
     productGridEl.className = viewMode === 'grid' ? 'product-grid' : 'product-list';
     return;
   }
-  
+
+  // ============================================================
   // No products match filters
+  // ============================================================
   if (filtered.length === 0) {
     let message = 'No products match your filters.';
     if (storeFilterActive && !inventoryMode && !showAllProductsInInventory) {
       const storeNames = {};
-      stores.forEach(s => {
-        storeNames[s.store_id] = s.name;
-      });
+      stores.forEach(s => { storeNames[s.store_id] = s.name; });
       message = `No products available at ${storeNames[currentStore] || currentStore}. Try turning off the store filter.`;
     }
     productGridEl.innerHTML = `<div style="text-align:center; padding:20px;">${message}</div>`;
     productGridEl.className = viewMode === 'grid' ? 'product-grid' : 'product-list';
     return;
   }
-  
+
+  // ============================================================
   // Build product cards
+  // ============================================================
   let html = '';
-  
+
   // Show store filter indicator - ONLY in inventory mode
   if (inventoryMode && storeFilterActive && !showAllProductsInInventory) {
     const storeNames = {};
-    stores.forEach(s => {
-      storeNames[s.store_id] = s.name;
-    });
+    stores.forEach(s => { storeNames[s.store_id] = s.name; });
     const productCount = filtered.length;
     html += `<div style="font-size:0.8rem; color:#64748b; margin-bottom:12px; padding:6px 14px; background:#f1f5f9; border-radius:20px; display:inline-block;">
       📍 Showing ${productCount} product(s) available at ${storeNames[currentStore] || currentStore}
     </div>`;
   }
-  
+
   // ============================================================
   // INVENTORY MODE - Checkbox style store availability WITH AUTO-SAVE PRICE
   // ============================================================
@@ -5062,7 +5095,7 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
     filtered.forEach(prod => {
       const isLowStock = prod.stock < LOW_STOCK_THRESHOLD;
       const lowStockClass = isLowStock ? 'low-stock-card' : '';
-      
+
       let anyStoreAvailable = false;
       stores.forEach(s => {
         let field = `available_${s.store_id}`;
@@ -5074,12 +5107,31 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
           anyStoreAvailable = true;
         }
       });
-      
+
+      // ✅ Assigned store info for header line
+      let assignedInfo = '';
+      if (prod.assigned_store) {
+        const s = stores.find(x => x.store_id === prod.assigned_store);
+        const name = s ? s.name : prod.assigned_store;
+        const emoji = getStoreEmoji(prod.assigned_store);
+        assignedInfo = `<div style="font-size:0.75rem; color:#b45309; background:rgba(245,158,11,0.12); padding:2px 10px; border-radius:10px; display:inline-block; margin-top:4px; font-weight:600;">⭐ Assigned to ${emoji} ${escapeHtml(name)}</div>`;
+      } else {
+        // Check for category fallback
+        const catStoreId = categoryStoreMap[prod.category];
+        if (catStoreId) {
+          const s = stores.find(x => x.store_id === catStoreId);
+          const name = s ? s.name : catStoreId;
+          const emoji = getStoreEmoji(catStoreId);
+          assignedInfo = `<div style="font-size:0.7rem; color:#64748b; background:#f1f5f9; padding:2px 10px; border-radius:10px; display:inline-block; margin-top:4px;">↳ Category fallback: ${emoji} ${escapeHtml(name)}</div>`;
+        }
+      }
+
       html += `<div class="product-card ${lowStockClass}" data-id="${prod.id}" style="padding: 16px; ${!anyStoreAvailable ? 'opacity: 0.6; border-color: #ef4444;' : ''}">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
           <div style="flex: 1; min-width: 150px;">
             <div class="product-name" style="font-weight: 600; font-size: 1rem;">${escapeHtml(prod.name)} ${!anyStoreAvailable ? '🚫' : ''}</div>
             <div class="product-category" style="font-size: 0.8rem; color: #64748b;">${escapeHtml(prod.category)}</div>
+            ${assignedInfo}
             <div style="display: flex; align-items: center; gap: 6px; margin: 6px 0;">
               <span style="font-size: 0.85rem; color: #64748b; font-weight: 600;">RM</span>
               <input type="number" class="price-input-auto" data-id="${prod.id}" 
@@ -5102,16 +5154,27 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
                 const slotNumStr = String(store.slot_number).padStart(2, '0');
                 availabilityField = `available_store_${slotNumStr}`;
               }
-              
+
               const isAvailable = prod[availabilityField] !== false;
+              const isAssigned = prod.assigned_store === store.store_id;
               const storeName = store.name;
-              let emoji = '🏪';
-              if (store.store_id === 'queens') emoji = '🏬';
-              else if (store.store_id === 'sunshine') emoji = '☀️';
-              else if (store.store_id === 'gurney_paragon') emoji = '🏙️';
-              
+              const emoji = getStoreEmoji(store.store_id);
+
+              // ✅ ⭐ ASSIGNED badge
+              const badge = isAssigned
+                ? `<span style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 1px 8px; border-radius: 10px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.3px; margin-left: 4px; box-shadow: 0 1px 3px rgba(245,158,11,0.4);">⭐ ASSIGNED</span>`
+                : '';
+
+              const bg = isAssigned
+                ? 'rgba(245, 158, 11, 0.12)'
+                : (isAvailable ? 'rgba(44, 122, 75, 0.08)' : 'rgba(239, 68, 68, 0.08)');
+
+              const border = isAssigned
+                ? '1px solid rgba(245, 158, 11, 0.5)'
+                : '1px solid transparent';
+
               return `
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; padding: 2px 4px; border-radius: 4px; transition: background 0.2s; ${isAvailable ? 'background: rgba(44, 122, 75, 0.08);' : 'background: rgba(239, 68, 68, 0.08);'}">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; padding: 3px 6px; border-radius: 6px; transition: background 0.2s; background: ${bg}; border: ${border};">
                   <input type="checkbox" 
                          class="store-availability-checkbox" 
                          data-product="${prod.id}" 
@@ -5119,6 +5182,7 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
                          ${isAvailable ? 'checked' : ''} 
                          style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;">
                   <span>${emoji} ${escapeHtml(storeName)}</span>
+                  ${badge}
                   <span style="margin-left: auto; font-size: 0.7rem; color: ${isAvailable ? '#2c7a4b' : '#ef4444'};">${isAvailable ? '✅' : '❌'}</span>
                 </label>
               `;
@@ -5131,21 +5195,21 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
             <input type="number" class="stock-input" data-id="${prod.id}" value="${prod.stock}" step="1" min="0" style="width: 60px; text-align: center; border-radius: 20px; border: 1px solid #cbd5e1; padding: 4px 6px; font-size: 0.9rem; font-weight: 600;">
             <button class="inventory-btn inc-stock" data-id="${prod.id}" style="background: #f1f5f9; border: none; width: 30px; height: 30px; border-radius: 30px; font-weight: bold; font-size: 1.1rem; cursor: pointer; touch-action: manipulation;">+</button>
           </div>
-          <span style="font-size: 0.7rem; color: #94a3b8;">Click checkboxes to toggle store availability</span>
+          <span style="font-size: 0.7rem; color: #94a3b8;">Tick store to assign sale ⭐ · Untick the assigned store is blocked</span>
         </div>
       </div>`;
     });
-    
+
     productGridEl.innerHTML = html;
     productGridEl.className = viewMode === 'grid' ? 'product-grid' : 'product-list';
-    
+
     attachInventoryEvents();
     attachStoreAvailabilityEvents();
     attachAutoPriceUpdateEvents();
-    
+
     return;
   }
-  
+
   // ============================================================
   // NORMAL SALES MODE - Clean display with special offer badges
   // ============================================================
@@ -5154,12 +5218,12 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
     if (prod.stock <= 0) {
       additionalClass = 'out-of-stock-card';
     }
-    
+
     // ✅ Add special badge based on category
     let specialBadge = '';
     let badgeColor = '';
     let badgeText = '';
-    
+
     if (prod.category === "100ML PERFUME EDP" || prod.category === "50ML PERFUME EDP") {
       badgeColor = '#dc2626';
       badgeText = 'RM 1 OFFER';
@@ -5170,24 +5234,41 @@ if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
       badgeColor = '#8b5cf6';
       badgeText = 'RM 5 OFFER';
     }
-    
+
     if (badgeText) {
       specialBadge = ` <span style="background:${badgeColor}; color:white; font-size:0.6rem; padding:2px 8px; border-radius:10px; margin-left:4px; font-weight:600;">${badgeText}</span>`;
     }
-    
+
+    // ✅ NEW: Show ⭐ assigned store on card
+    let assignedBadge = '';
+    const effectiveStore = prod.assigned_store
+      || categoryStoreMap[prod.category]
+      || null;
+
+    if (effectiveStore) {
+      const s = stores.find(x => x.store_id === effectiveStore);
+      const name = s ? s.name : effectiveStore;
+      const emoji = getStoreEmoji(effectiveStore);
+      const isDirect = !!prod.assigned_store; // ⭐ direct vs ↳ category fallback
+      const bg = isDirect ? 'rgba(245,158,11,0.15)' : 'rgba(100,116,139,0.12)';
+      const fg = isDirect ? '#b45309' : '#475569';
+      const marker = isDirect ? '⭐' : '↳';
+      assignedBadge = ` <span style="background:${bg}; color:${fg}; font-size:0.6rem; padding:2px 8px; border-radius:10px; margin-left:4px; font-weight:600;" title="${isDirect ? 'Product assigned store' : 'Category fallback store'}">${marker} ${emoji} ${escapeHtml(name)}</span>`;
+    }
+
     const stockStatus = prod.stock <= 0 ? '🔴 Out of Stock' : `📦 Stock: ${prod.stock}`;
-    
+
     html += `<div class="product-card ${additionalClass}" data-id="${prod.id}">
-      <div class="product-name">${escapeHtml(prod.name)}${specialBadge}</div>
+      <div class="product-name">${escapeHtml(prod.name)}${specialBadge}${assignedBadge}</div>
       <div class="product-category">${escapeHtml(prod.category)}</div>
       <div class="product-price">RM ${prod.price.toFixed(2)}</div>
       <div class="product-stock">${stockStatus}</div>
     </div>`;
   });
-  
+
   productGridEl.innerHTML = html;
   productGridEl.className = viewMode === 'grid' ? 'product-grid' : 'product-list';
-  
+
   // Attach normal mode event listeners (click to add to cart)
   document.querySelectorAll('.product-card').forEach(card => {
     const productId = card.dataset.id;
@@ -5503,173 +5584,101 @@ async function handleAvailabilityChange(e) {
   const cb = this;
   const productId = cb.dataset.product;
   const store = cb.dataset.store;
-  
-  // ✅ Get the current checked state
   const isChecked = cb.checked;
-  
-  // Find the product
+
+  // Find product
   const product = products.find(p => p.id == productId);
   if (!product) {
     console.error('❌ Product not found:', productId);
     return;
   }
-  
-  // ✅ Determine which field to update
+
+  // Determine which availability column
   const storeObj = stores.find(s => s.store_id === store);
-  let availabilityField = `available_${store}`; // Default for old stores
-  
-  // If store has a slot, use slot-based field
+  let availabilityField = `available_${store}`;
   if (storeObj && storeObj.slot_number) {
     const slotNumStr = String(storeObj.slot_number).padStart(2, '0');
     availabilityField = `available_store_${slotNumStr}`;
-    console.log(`📦 Using slot-based availability column: ${availabilityField}`);
+  }
+
+  // ============================================================
+  // ✅ RULE B: Block unticking the assigned store
+  // ============================================================
+  if (!isChecked && product.assigned_store === store) {
+    // Revert the checkbox visually
+    cb.checked = true;
+    cb.disabled = false;
+
+    await showAlertModal(
+      '⚠️ Cannot Unassign',
+      `<div style="text-align:left;">\
+        <p><strong>${escapeHtml(product.name)}</strong> is currently assigned to <strong>${escapeHtml(storeObj ? storeObj.name : store)}</strong>.</p>\
+        <p style="margin-top:12px;">To remove this store, first <strong>assign the product to a different store</strong> by ticking that store's checkbox. Then you can untick this one.</p>\
+      </div>`
+    );
+    return;
+  }
+
+  // ============================================================
+  // ✅ RULE A: Tick a store → becomes the assigned store
+  // ============================================================
+  const updates = {};
+  updates[availabilityField] = isChecked;
+
+  if (isChecked) {
+    // Most recently ticked store becomes the assigned store
+    if (product.assigned_store !== store) {
+      updates.assigned_store = store;
+      product.assigned_store = store;
+      console.log(`⭐ ${product.name} → assigned to ${store} (most recent tick wins)`);
+    }
+    product[availabilityField] = true;
   } else {
-    console.log(`📦 Using fallback availability column: ${availabilityField}`);
+    // Unticking a non-assigned store is fine — just removes availability
+    product[availabilityField] = false;
+    console.log(`📤 ${product.name} → unticked at ${store} (not the assigned store)`);
   }
-  
-  // ✅ Update the product object IMMEDIATELY (optimistic update)
-  product[availabilityField] = isChecked;
-  
-  // ✅ Update the UI IMMEDIATELY
-  const label = cb.closest('label');
-  const statusSpan = label ? label.querySelector('span:last-child') : null;
-  
-  if (statusSpan) {
-    statusSpan.textContent = isChecked ? '✅' : '❌';
-    statusSpan.style.color = isChecked ? '#2c7a4b' : '#ef4444';
-  }
-  if (label) {
-    label.style.background = isChecked ? 'rgba(44, 122, 75, 0.08)' : 'rgba(239, 68, 68, 0.08)';
-  }
-  
-  // ✅ Keep the checkbox in the correct state
-  cb.checked = isChecked;
-  
-  // Show loading indicator
-  cb.disabled = true;
-  cb.style.opacity = '0.5';
-  
-  // Store the original state
-  const originalChecked = isChecked;
-  
+
+  // ============================================================
+  // ✅ OPTIMISTIC UI UPDATE
+  // ============================================================
+  renderProductGrid();
+
+  // ============================================================
+  // ✅ SAVE TO SUPABASE
+  // ============================================================
   try {
-    // ✅ Update Supabase
-    const updateData = {};
-    updateData[availabilityField] = isChecked;
-    
     const { error } = await supabase
       .from('products')
-      .update(updateData)
+      .update(updates)
       .eq('id', productId);
-    
-    if (error) {
-      console.error('❌ Error updating store availability:', error);
-      // Revert everything
-      cb.checked = !originalChecked;
-      product[availabilityField] = !originalChecked;
-      if (statusSpan) {
-        statusSpan.textContent = !originalChecked ? '✅' : '❌';
-        statusSpan.style.color = !originalChecked ? '#2c7a4b' : '#ef4444';
-      }
-      if (label) {
-        label.style.background = !originalChecked ? 'rgba(44, 122, 75, 0.08)' : 'rgba(239, 68, 68, 0.08)';
-      }
-      await showAlertModal('Error', 'Failed to update store availability: ' + error.message);
-    } else {
-      console.log(`✅ Store ${store} availability updated to ${isChecked} for product ${product.name}`);
-      
-      // ✅ Make sure checkbox stays in the correct state
-      cb.checked = isChecked;
-      
-      // Update the card appearance
-      const card = cb.closest('.product-card');
-      if (card) {
-        // Check if any store is available
-        let anyStoreAvailable = false;
-        
-        // Check both slot-based and old stores
-        stores.forEach(s => {
-          let field = `available_${s.store_id}`;
-          if (s.slot_number) {
-            const slotNumStr = String(s.slot_number).padStart(2, '0');
-            field = `available_store_${slotNumStr}`;
-          }
-          if (product[field] !== false) {
-            anyStoreAvailable = true;
-          }
-        });
-        
-        card.style.opacity = anyStoreAvailable ? '1' : '0.6';
-        card.style.borderColor = anyStoreAvailable ? '' : '#ef4444';
-        
-        // Update the product name badge
-        const nameDiv = card.querySelector('.product-name');
-        if (nameDiv) {
-          const currentText = nameDiv.textContent || '';
-          if (!anyStoreAvailable) {
-            if (!currentText.includes('🚫')) {
-              nameDiv.textContent = currentText.replace('🚫', '').trim() + ' 🚫';
-            }
-          } else {
-            nameDiv.textContent = currentText.replace('🚫', '').trim();
-          }
-        }
-        
-        // Update or remove the "not available" warning
-        let warningDiv = card.querySelector('.no-store-warning');
-        if (!anyStoreAvailable) {
-          if (!warningDiv) {
-            const priceDiv = card.querySelector('.product-price');
-            if (priceDiv) {
-              warningDiv = document.createElement('div');
-              warningDiv.className = 'no-store-warning';
-              warningDiv.style.cssText = 'font-size:0.75rem; color:#ef4444; margin-top:4px;';
-              warningDiv.textContent = '⚠️ Not available at any store';
-              priceDiv.parentNode.insertBefore(warningDiv, priceDiv.nextSibling);
-            }
-          }
-        } else {
-          if (warningDiv) {
-            warningDiv.remove();
-          }
-        }
-      }
-      
-      // ✅ Sync after availability change
-      if (window._availabilitySyncTimeout) {
-        clearTimeout(window._availabilitySyncTimeout);
-      }
-      window._availabilitySyncTimeout = setTimeout(() => {
-        console.log('🔄 Syncing after availability update...');
-        backgroundSync(true).catch(err => {
-          console.warn('⚠️ Background sync after availability update failed:', err);
-        });
-        window._availabilitySyncTimeout = null;
-      }, 1000);
-    }
+
+    if (error) throw error;
+    console.log(`✅ Saved:`, updates);
   } catch (err) {
-    console.error('❌ Error:', err);
-    // Revert everything
-    cb.checked = !originalChecked;
-    product[availabilityField] = !originalChecked;
-    if (statusSpan) {
-      statusSpan.textContent = !originalChecked ? '✅' : '❌';
-      statusSpan.style.color = !originalChecked ? '#2c7a4b' : '#ef4444';
+    console.error('❌ Failed to save availability/assignment:', err);
+
+    // Rollback local changes
+    product[availabilityField] = !isChecked;
+    if (isChecked && updates.assigned_store) {
+      product.assigned_store = null;
     }
-    if (label) {
-      label.style.background = !originalChecked ? 'rgba(44, 122, 75, 0.08)' : 'rgba(239, 68, 68, 0.08)';
-    }
-  } finally {
-    cb.disabled = false;
-    cb.style.opacity = '1';
-    // ✅ Force the checkbox to the correct state
-    cb.checked = originalChecked;
-    // ✅ Also force update the status span again
-    if (statusSpan) {
-      statusSpan.textContent = originalChecked ? '✅' : '❌';
-      statusSpan.style.color = originalChecked ? '#2c7a4b' : '#ef4444';
-    }
+    renderProductGrid();
+
+    await showAlertModal('Error', 'Failed to save: ' + err.message);
+    return;
   }
+
+  // ============================================================
+  // ✅ BACKGROUND SYNC
+  // ============================================================
+  if (window._availabilitySyncTimeout) clearTimeout(window._availabilitySyncTimeout);
+  window._availabilitySyncTimeout = setTimeout(() => {
+    backgroundSync(true).catch(err =>
+      console.warn('⚠️ Background sync after availability update failed:', err)
+    );
+    window._availabilitySyncTimeout = null;
+  }, 1000);
 }
 function refreshInventoryCheckboxes() {
   console.log('🔄 Refreshing inventory checkboxes...');
@@ -6837,9 +6846,8 @@ function showPaymentModal(totalAmount) {
 function buildStoreBreakdown(saleItems) {
   const breakdown = {}; // { store_id: { items: [], total: 0 } }
 
-  for (const item of saleItems) {
-    const storeId = getStoreForCategory(item.category);
-
+    for (const item of saleItems) {
+    const storeId = getStoreForProduct(item);
     if (!breakdown[storeId]) {
       breakdown[storeId] = { items: [], total: 0 };
     }
@@ -6873,8 +6881,8 @@ function buildStoreBreakdown(saleItems) {
 async function deductStockPerStore(saleItems) {
   const deductionByStore = {}; // { store_id: { product_id: qty } }
 
-  for (const item of saleItems) {
-    const storeId = getStoreForCategory(item.category);
+   for (const item of saleItems) {
+    const storeId = getStoreForProduct(item);
     if (!deductionByStore[storeId]) deductionByStore[storeId] = {};
     deductionByStore[storeId][item.id] =
       (deductionByStore[storeId][item.id] || 0) + item.quantity;
