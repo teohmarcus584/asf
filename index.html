@@ -6936,6 +6936,7 @@ async function saveTransactionToSheet(transaction) {
     console.log('📋 Customer ID:', transaction.customer_id);
     
     // 1. Save to transactions table
+        // 1. Save to transactions table
     const { data, error } = await supabase
       .from('transactions')
       .insert([{
@@ -6952,7 +6953,7 @@ async function saveTransactionToSheet(transaction) {
         refunded: transaction.refunded || false,
         refund_of: transaction.refund_of || '',
         original_payment_method: transaction.original_payment_method || '',
-        customer_id: transaction.customer_id || '',  // ✅ Make sure this is saved
+        customer_id: transaction.customer_id || '',
         points_awarded: transaction.points_awarded || 0,
         discount: transaction.discount || 0,
         buy2_free1_discount: transaction.buy2_free1_discount || 0,
@@ -6961,7 +6962,8 @@ async function saveTransactionToSheet(transaction) {
         refunded_by: transaction.refunded_by || '',
         staff_discount: transaction.staff_discount || 0,
         sales_person_name: transaction.sales_person_name || '',
-        sales_person_id: transaction.sales_person_id || ''
+        sales_person_id: transaction.sales_person_id || '',
+        store_breakdown: transaction.store_breakdown || null  // ✅ NEW
       }])
       .select();
     
