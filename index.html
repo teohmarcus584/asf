@@ -3776,16 +3776,67 @@ async function verifyEmployeeByPin(pin) {
       name: data.name,
       pin: data.pin,
       isAdmin: isAdmin,
-      allowed_categories: allowedCategories  // ✅ Include category access
+      allowed_categories: allowedCategories,
+      store: data.store || null   // ✅ NEW: Keep employee's assigned store
     };
     
     // ✅ Log for debugging
     console.log('👤 Employee logged in:', {
       name: currentEmployee.name,
       isAdmin: currentEmployee.isAdmin,
-      allowed_categories: currentEmployee.allowed_categories
+      allowed_categories: currentEmployee.allowed_categories,
+      assigned_store: currentEmployee.store
     });
     
+    // ============================================================
+    // ✅ NEW: SET STORE BASED ON EMPLOYEE'S ASSIGNMENT
+    // ============================================================
+    if (!isAdmin && data.store) {
+      // Non-admin with assigned store → force that store
+      currentStore = data.store;
+      initialStore = data.store;
+      console.log(`🏪 Non-admin login → setting store to assigned store: ${data.store}`);
+      
+      // Update the store dropdown
+      const storeSelectEl = document.getElementById('storeSelect');
+      if (storeSelectEl) {
+        // Make sure the option exists
+        const optionExists = Array.from(storeSelectEl.options).some(opt => opt.value === data.store);
+        if (!optionExists) {
+          const storeObj = stores.find(s => s.store_id === data.store);
+          const opt = document.createElement('option');
+          opt.value = data.store;
+          opt.textContent = storeObj ? storeObj.name : data.store;
+          storeSelectEl.appendChild(opt);
+        }
+        storeSelectEl.value = data.store;
+        storeSelectEl.disabled = true; // Non-admin cannot switch stores
+      }
+      
+      // ✅ Clear any cached products for other stores to force fresh load
+      localStorage.removeItem(`products_${currentStore}`);
+      
+    } else if (isAdmin) {
+      // Admin → keep current store (from GPS auto-select) but allow switching
+      console.log(`👑 Admin login → keeping current store: ${currentStore}`);
+      const storeSelectEl = document.getElementById('storeSelect');
+      if (storeSelectEl) {
+        storeSelectEl.disabled = false;
+      }
+      initialStore = currentStore;
+    } else {
+      // Non-admin with NO assigned store → fall back to current (GPS) store
+      console.log(`⚠️ Non-admin with no assigned store → using GPS store: ${currentStore}`);
+      initialStore = currentStore;
+      const storeSelectEl = document.getElementById('storeSelect');
+      if (storeSelectEl) {
+        storeSelectEl.disabled = true;
+      }
+    }
+    
+    // ============================================================
+    // ✅ Update UI
+    // ============================================================
     document.getElementById('employeeNameHeader').innerText = `👤 ${currentEmployee.name}`;
     document.getElementById('loginModal').style.display = 'none';
     document.getElementById('mainContent').style.display = 'block';
@@ -3793,7 +3844,30 @@ async function verifyEmployeeByPin(pin) {
     // ✅ STOP fingerprint polling once logged in
     stopFingerprintListener();
     
+    // ============================================================
+    // ✅ FORCE FRESH PRODUCT LOAD FOR THE EMPLOYEE'S STORE
+    // ============================================================
+    // Clear preloaded data for this store so we fetch fresh products
+    if (preloadedDataMap[currentStore]) {
+      delete preloadedDataMap[currentStore];
+    }
+    
+    // Fetch products for the employee's store
+    await fetchProductsFromSheet(true);
+    
+    // Re-render the product grid and category dropdown
+    renderProductGrid();
+    
+    // Update customer display to refresh UI
+    updateCustomerDisplay();
+    
     await finishLoginAfterVerification();
+    
+    // ✅ Extra safety: re-render after login finishes
+    setTimeout(() => {
+      renderProductGrid();
+    }, 100);
+    
     return true;
   } catch (err) {
     console.error(err);
@@ -16325,7 +16399,10 @@ async function updateStockOnServer(productId, newStock) {
 
 async function finishLoginAfterVerification() {
   if (window.autoSyncInterval) clearInterval(window.autoSyncInterval);
-  await loadInitialData();
+  
+  // ✅ Force fresh fetch for the (now correctly set) currentStore
+  await loadInitialData(true);
+  
   soldBySelectCart.value = currentEmployee.id;
 
   applyRoleBasedUI();
@@ -16355,13 +16432,11 @@ async function finishLoginAfterVerification() {
   preloadReport();
   enableBarcodeScanner();
   refreshCategoryHighlighting();
-
-  
 }
 
-async function loadInitialData() {
+async function loadInitialData(force = false) {
   try {
-    const success = await fetchProductsFromSheet();
+    const success = await fetchProductsFromSheet(force); // ✅ pass force through
     if (!success) throw new Error('Failed to load products');
     
     const employees = await loadAndCacheEmployees();
