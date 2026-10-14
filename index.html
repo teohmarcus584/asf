@@ -7023,6 +7023,10 @@ async function completeCheckout(paymentMethod, cashReceived) {
     document.getElementById('paymentModal').style.display = 'none';
     const totalAmount = pendingTransaction.totalAmount;
 
+    // ✅ NEW: Force-refresh category→store map right before checkout
+    await fetchCategoryStoreMap(true);
+    console.log('🔎 Checkout: categoryStoreMap has', Object.keys(categoryStoreMap).length, 'entries');
+
     const transactionId = await getNextTransactionNumber(currentStore);
     const salesPersonSelect = document.getElementById('soldBySelectCart');
     const selectedOption = salesPersonSelect.options[salesPersonSelect.selectedIndex];
@@ -7046,7 +7050,9 @@ async function completeCheckout(paymentMethod, cashReceived) {
     const customerPhone = finalCustomer ? finalCustomer.phone : null;
     const customerId = finalCustomer ? finalCustomer.id : null;
 
+    // ============================================================
     // ✅ Calculate sale items with all special offers
+    // ============================================================
     const saleItems = cart.map(item => {
       let specialPrice = null;
       let specialLabel = null;
@@ -7127,11 +7133,16 @@ async function completeCheckout(paymentMethod, cashReceived) {
       };
     });
 
+    // ============================================================
     // ✅ NEW: Build per-store breakdown from sale items
+    // ============================================================
     const storeBreakdown = buildStoreBreakdown(saleItems);
     console.log('📦 Store breakdown:', storeBreakdown);
+    console.log('📦 Store count:', Object.keys(storeBreakdown).length);
 
-    // ✅ Build transaction with BOTH customer_id AND customer_phone
+    // ============================================================
+    // ✅ Build transaction
+    // ============================================================
     const transaction = {
       transaction_id: transactionId,
       items: saleItems,
@@ -7164,7 +7175,9 @@ async function completeCheckout(paymentMethod, cashReceived) {
       store_count: Object.keys(storeBreakdown).length
     });
 
-    // Print receipt
+    // ============================================================
+    // Print receipt (BEFORE saving)
+    // ============================================================
     let receiptPrinted = false;
     if (window.printerAPI?.isConnected && window.printerAPI.printReceipt) {
       const transactionWithName = {
@@ -7207,13 +7220,17 @@ async function completeCheckout(paymentMethod, cashReceived) {
       }
     }
 
-    // ✅ SAVE TRANSACTION FIRST
+    // ============================================================
+    // ✅ SAVE TRANSACTION
+    // ============================================================
     showLoading('Processing transaction...');
     const success = await saveTransactionToSheet(transaction);
     hideLoading();
 
     if (success) {
+      // ============================================================
       // ✅ NEW: Deduct stock from EACH item's assigned store
+      // ============================================================
       console.log('🔄 Deducting stock per store...');
       await deductStockPerStore(saleItems);
 
@@ -7230,7 +7247,9 @@ async function completeCheckout(paymentMethod, cashReceived) {
         console.warn('⚠️ Background sync failed after sale:', syncErr);
       }
 
-      // ✅ SAVE TO LUCKY DRAW WITH PHONE NUMBER
+      // ============================================================
+      // ✅ SAVE TO LUCKY DRAW
+      // ============================================================
       console.log('🎲 Saving to Lucky Draw with customer phone:', customerPhone);
       await saveToLuckyDraw(transaction, customerPhone);
 
@@ -7311,7 +7330,9 @@ async function completeCheckout(paymentMethod, cashReceived) {
       // ============================================================
       clearCart();
 
+      // ============================================================
       // ✅ UPDATE CUSTOMER POINTS
+      // ============================================================
       console.log('🔍 DEBUG: About to update customer points');
       console.log('🔍 customerId:', customerId);
       console.log('🔍 customerPhone:', customerPhone);
@@ -7319,7 +7340,7 @@ async function completeCheckout(paymentMethod, cashReceived) {
 
       if (customerPhone) {
         try {
-          const { data: customerData, error: customerError } = await supabase
+          let { data: customerData, error: customerError } = await supabase
             .from('customers')
             .select('id, points, name, phone')
             .eq('phone', customerPhone)
@@ -7391,11 +7412,6 @@ async function completeCheckout(paymentMethod, cashReceived) {
             console.log('✅ Verified points:', verifyData);
           }
 
-          const updatedCustomer = {
-            ...customerData,
-            points: newPoints
-          };
-
           if (selectedCustomer) {
             selectedCustomer.points = newPoints;
             selectedCustomer.id = customerData.id;
@@ -7433,7 +7449,9 @@ async function completeCheckout(paymentMethod, cashReceived) {
 
       renderProductGrid();
 
-      // ✅ NEW: Show store breakdown in the confirmation modal
+      // ============================================================
+      // ✅ SHOW STORE BREAKDOWN IN CONFIRMATION MODAL
+      // ============================================================
       let breakdownText = '';
       const breakdownEntries = Object.entries(storeBreakdown);
       if (breakdownEntries.length > 1) {
