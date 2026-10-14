@@ -4593,10 +4593,11 @@ function renderStockTakeProductGrid() {
   const searchTerm = searchInput.value.toLowerCase();
   const selectedCategory = categorySelect.value;
   
-  let filtered = products.slice();
-  if (selectedCategory !== 'all') {
-    filtered = filtered.filter(p => p.category === selectedCategory);
-  }
+  // ✅ HIDE: Only show products from accessible categories
+let filtered = filterProductsByCategoryAccess(products.slice());
+if (selectedCategory !== 'all') {
+  filtered = filtered.filter(p => p.category === selectedCategory);
+}
   if (searchTerm) {
     filtered = filtered.filter(p => p.name.toLowerCase().includes(searchTerm));
   }
@@ -4712,22 +4713,12 @@ function renderProductGrid() {
     return;
   }
   
-  // ✅ ADD: Check category access for the selected category
-  if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
-    productGridEl.innerHTML = `
-      <div style="text-align:center; padding:40px 20px;">
-        <div style="font-size:3rem; margin-bottom:16px;">🚫</div>
-        <div style="font-weight:600; font-size:1.2rem; color:#dc2626; margin-bottom:8px;">
-          Access Restricted
-        </div>
-        <div style="color:#64748b;">
-          You don't have permission to access this category.
-        </div>
-      </div>
-    `;
-    return;
-  }
-  
+ // ✅ HIDE: Silently reset to "all" if employee can't access this category
+if (selectedCategory !== 'all' && !canAccessCategory(selectedCategory)) {
+  categorySelect.value = 'all';
+  renderProductGrid();
+  return;
+}
   // Category View (when no category selected, not in inventory mode, no search)
    // Category View (when no category selected, not in inventory mode, no search)
   if (selectedCategory === 'all' && !inventoryMode && !searchTerm) {
@@ -11650,11 +11641,12 @@ function applyCarAromaticPromo() {
   const fixedPrice = 2;
   
   // ✅ Check category access first
-  if (!canAccessCategory(targetCategory)) {
-    document.getElementById('promoMessage').innerText = `🚫 You don't have access to "${targetCategory}".`;
-    document.getElementById('promoMessage').style.display = 'block';
-    return;
-  }
+  // ✅ HIDE: Silently block — pretend the promo doesn't exist
+if (!canAccessCategory(targetCategory)) {
+  document.getElementById('promoMessage').innerText = `No item in category "${targetCategory}" found.`;
+  document.getElementById('promoMessage').style.display = 'block';
+  return;
+}
 
   const item = cart.find(i => i.product.category === targetCategory);
   if (!item) {
@@ -11680,11 +11672,12 @@ function apply15mlPerfumeEdpPromo() {
   const fixedPrice = 8;
   
   // ✅ Check category access first
-  if (!canAccessCategory(targetCategory)) {
-    document.getElementById('promoMessage').innerText = `🚫 You don't have access to "${targetCategory}".`;
-    document.getElementById('promoMessage').style.display = 'block';
-    return;
-  }
+  // ✅ HIDE: Silently block — pretend the promo doesn't exist
+if (!canAccessCategory(targetCategory)) {
+  document.getElementById('promoMessage').innerText = `No item in category "${targetCategory}" found.`;
+  document.getElementById('promoMessage').style.display = 'block';
+  return;
+}
 
   const item = cart.find(i => i.product.category === targetCategory);
   if (!item) {
@@ -16949,12 +16942,12 @@ async function processBarcode() {
   }
 
   // ✅ ADD: Check category access before allowing product scan
-  if (!canAccessCategory(product.category)) {
-    await showCategoryAccessDenied(product.category);
-    resetBarcodeBuffer();
-    return;
-  }
-
+  // ✅ HIDE: Treat restricted products as "not found"
+if (!canAccessCategory(product.category)) {
+  showAlertModal('Barcode not found', `Product with ID ${code} does not exist.`);
+  resetBarcodeBuffer();
+  return;
+}
   if (inventoryMode) {
     const oldStock = product.stock;
     const newStock = oldStock + 1;
