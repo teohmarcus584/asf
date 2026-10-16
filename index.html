@@ -19417,25 +19417,20 @@ document.getElementById('collectSelectedBtn').addEventListener('click', async ()
   document.getElementById('closeLoginModal').addEventListener('click', resetLoginBarcodeBuffer);
 
   // Printer
-  document.getElementById('printerIconBtn').addEventListener('click', openPrinterModal);
-  document.getElementById('connectPrinterModalBtn').addEventListener('click', async () => {
-  if (!isPrinterConnected) {
-    try {
-      await connectPrinter();
-      await showAlertModal('✅ Connected', 'WiFi printer ready!');
-    } catch (err) {
-      await showAlertModal('❌ Connection Failed', 
-        `Could not connect to printer.\n\n${err.message}\n\n` +
-        `Make sure ESP32 printer bridge is powered and on the same WiFi.`
-      );
-    }
-  } else {
-    await disconnectPrinter();
-    await showAlertModal('Disconnected', 'Printer disconnected.');
-  }
+  // Printer icon → open modal
+const printerIconBtn = document.getElementById('printerIconBtn');
+if (printerIconBtn) printerIconBtn.addEventListener('click', openPrinterModal);
+
+// Close printer modal
+const closePrinterModal = document.getElementById('closePrinterModal');
+if (closePrinterModal) closePrinterModal.addEventListener('click', () => {
+  document.getElementById('printerModal').style.display = 'none';
 });
-  document.getElementById('closePrinterModal').addEventListener('click', () => document.getElementById('printerModal').style.display = 'none');
-  document.getElementById('closePrinterModalBtn').addEventListener('click', () => document.getElementById('printerModal').style.display = 'none');
+
+const closePrinterModalBtn = document.getElementById('closePrinterModalBtn');
+if (closePrinterModalBtn) closePrinterModalBtn.addEventListener('click', () => {
+  document.getElementById('printerModal').style.display = 'none';
+});
 
   // Change PIN
   document.getElementById('sideChangePinBtn').addEventListener('click', wrapMenuAction(() => {
