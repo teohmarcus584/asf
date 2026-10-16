@@ -8750,50 +8750,37 @@ async function sendChunkedData(data, chunkSize = 500) {
     throw new Error('WiFi printer not connected');
   }
 
-  // Convert Uint8Array to string
-  let body = '';
+  // Convert Uint8Array → string
+  let raw = '';
   if (typeof data === 'string') {
-    body = data;
+    raw = data;
   } else if (data instanceof Uint8Array) {
     for (let i = 0; i < data.length; i++) {
-      body += String.fromCharCode(data[i]);
+      raw += String.fromCharCode(data[i]);
     }
   } else {
-    body = String(data);
+    raw = String(data);
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  // URL-encode it so it survives the form parser
+  const encoded = encodeURIComponent(raw);
+  const formBody = 'data=' + encoded;
 
-  try {
-    const res = await fetch(`${ESP32_PRINTER_URL}/print`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: body,
-      signal: controller.signal
-    });
+  console.log(`Sending ${raw.length} raw bytes → ${formBody.length} encoded bytes`);
 
-    clearTimeout(timeoutId);
+  const res = await fetch(`${ESP32_PRINTER_URL}/print`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: formBody
+  });
 
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const result = await res.json();
-    console.log('ESP32 response:', result);
-
-    if (!result.ok) {
-      throw new Error(result.error || 'Print failed');
-    }
-
-    console.log(`✅ Printed ${result.bytes || data.length} bytes via ESP32`);
-    return true;
-
-  } catch (err) {
-    clearTimeout(timeoutId);
-    console.error('❌ Print error:', err);
-    throw err;
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
   }
+
+  const result = await res.json();
+  console.log('ESP32 response:', result);
+  return result.ok;
 }
 
 // ============================================================
