@@ -8756,7 +8756,7 @@ async function sendChunkedData(data, chunkSize = 500) {
     
     const res = await fetch(`${ESP32_PRINTER_URL}/print`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
+      headers: { 'Content-Type': 'text/plain' },
       body: data,
       signal: controller.signal,
       cache: 'no-store'
