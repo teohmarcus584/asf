@@ -8988,8 +8988,13 @@ async function printReceipt(transaction, copies = 1) {
         commands = commands.slice(0, -4).concat(drawerCommand, commands.slice(-4));
       }
 
-      allCommands = allCommands.concat(commands);
+          allCommands = allCommands.concat(commands);
     }
+
+    // ✅ DEBUG — log what we're about to send
+    console.log('📤 About to send', allCommands.length, 'bytes');
+    console.log('📤 First 50 bytes:', allCommands.slice(0, 50).join(','));
+    console.log('📤 Last 50 bytes:', allCommands.slice(-50).join(','));
 
     await sendChunkedData(new Uint8Array(allCommands), 500);
     return true;
