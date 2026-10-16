@@ -8749,21 +8749,46 @@ async function sendChunkedData(data, chunkSize = 500) {
   if (!wifiPrinterConnected) {
     throw new Error('WiFi printer not connected');
   }
-  
+
+  // ---- DEBUG ----
+  console.log('===== sendChunkedData START =====');
+  console.log('data type:', data.constructor.name);
+  console.log('data length:', data.length);
+  console.log('ESP32 URL:', ESP32_PRINTER_URL);
+
+  // Convert to string if not already
+  let body;
+  if (typeof data === 'string') {
+    body = data;
+  } else if (data instanceof Uint8Array) {
+    // Convert Uint8Array to string (char codes 0-255 → one char each)
+    body = '';
+    for (let i = 0; i < data.length; i++) {
+      body += String.fromCharCode(data[i]);
+    }
+  } else {
+    body = String(data);
+  }
+
+  console.log('Final body length:', body.length);
+  console.log('First 20 char codes:',
+    Array.from(body.slice(0, 20)).map(c => c.charCodeAt(0)).join(','));
+  console.log('===============================');
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
-    
+
     const res = await fetch(`${ESP32_PRINTER_URL}/print`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'text/plain' },   // ✅ was application/octet-stream
-  body: data,
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: body,
       signal: controller.signal,
       cache: 'no-store'
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (!res.ok) {
       let errMsg = `HTTP ${res.status}`;
       try {
@@ -8772,26 +8797,27 @@ async function sendChunkedData(data, chunkSize = 500) {
       } catch (e) {}
       throw new Error(`Print failed: ${errMsg}`);
     }
-    
+
     const result = await res.json();
-    
+    console.log('ESP32 response:', result);
+
     if (!result.ok) {
       throw new Error(result.error || 'Print failed');
     }
-    
+
     console.log(`✅ Printed ${result.bytes || data.length} bytes via ESP32`);
     return true;
-    
+
   } catch (err) {
     console.error('❌ HTTP print error:', err);
-    
+
     if (err.name === 'AbortError' || err.message.includes('Failed to fetch')) {
       wifiPrinterConnected = false;
       isPrinterConnected = false;
       window.printerAPI.isConnected = false;
       updatePrinterStatusUI();
     }
-    
+
     throw err;
   }
 }
