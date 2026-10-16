@@ -3313,8 +3313,14 @@ console.log('✅ Supabase client created');
   }
 })();
 // ==================== FINGERPRINT LOGIN CONFIG ====================
-const ESP32_FINGERPRINT_URL = "http://192.168.0.107";  // ← Replace with YOUR ESP32 IP
+// ==================== FINGERPRINT LOGIN CONFIG ====================
+const ESP32_FINGERPRINT_URL = "http://192.168.0.107";
 
+// ==================== ESP32 WIFI PRINTER CONFIG ====================
+// Get this IP from the ESP32 printer bridge's serial monitor
+const ESP32_PRINTER_URL = localStorage.getItem('esp32_printer_ip') || "http://192.168.0.110";
+// ==================== PRINTER STATE ====================
+let isPrinterConnected = false;
 let fingerprintPollingInterval = null;
 
 // Cache for fingerprint mappings so we don't hit Supabase every poll
@@ -8006,103 +8012,352 @@ async function getNextTransactionNumber(store) {
   }
 }
 
-// ==================== PRINTER FUNCTIONS ====================
+// ==================== PRINTER FUNCTIONS (ESP32 WiFi Bridge) ====================
 
-let gattServer = null;
-let printerCharacteristic = null;
-let isPrinterConnected = false;
+let wifiPrinterConnected = false;
+let wifiPrinterMac = "";
+let printerHealthCheckInterval = null;
 
+// ============================================================
+// CONNECT PRINTER - talks to ESP32 over WiFi
+// ============================================================
 async function connectPrinter() {
   return new Promise(async (resolve, reject) => {
     try {
-      document.getElementById('connectPrinterModalBtn').disabled = true;
-      document.getElementById('printerStatusModal').innerText = '🔍 Scanning...';
-      const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] });
-      gattServer = await device.gatt.connect();
-      const services = await gattServer.getPrimaryServices();
-      let foundChar = null;
-      for (const service of services) {
-        const chars = await service.getCharacteristics();
-        for (const char of chars) {
-          if (char.properties.write || char.properties.writeWithoutResponse) {
-            foundChar = char;
-            break;
-          }
-        }
-        if (foundChar) break;
+      const connectBtn = document.getElementById('connectPrinterModalBtn');
+      const statusEl = document.getElementById('printerStatusModal');
+      
+      if (connectBtn) connectBtn.disabled = true;
+      if (statusEl) {
+        statusEl.innerText = '🔍 Checking ESP32 printer bridge...';
+        statusEl.style.color = '#3b82f6';
       }
-      if (!foundChar) throw new Error('No writable characteristic');
-      printerCharacteristic = foundChar;
+
+      // Step 1: Check if ESP32 is reachable
+      let status;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const statusRes = await fetch(`${ESP32_PRINTER_URL}/status`, {
+          signal: controller.signal,
+          cache: 'no-store'
+        });
+        clearTimeout(timeoutId);
+        
+        if (!statusRes.ok) throw new Error(`ESP32 returned ${statusRes.status}`);
+        status = await statusRes.json();
+      } catch (err) {
+        throw new Error(`ESP32 printer not reachable at ${ESP32_PRINTER_URL}. Check WiFi.`);
+      }
+
+      // Step 2: If ESP32 already has BT printer connected, we're done
+      if (status.bt_connected === true) {
+        wifiPrinterConnected = true;
+        isPrinterConnected = true;
+        wifiPrinterMac = status.mac || "";
+        
+        window.printerAPI = {
+          isConnected: true,
+          printReceipt: printReceipt,
+          openDrawer: openCashDrawer,
+          printPrizeVoucher: printPrizeVoucher,
+          printPromoVoucher: printPromoVoucher,
+          printSettlementReport: printSettlementReport,
+          isWifi: true,
+          mac: wifiPrinterMac
+        };
+        
+        updatePrinterStatusUI();
+        startPrinterHealthCheck();
+        
+        if (statusEl) {
+          statusEl.innerText = `✅ Ready (ESP32 → ${wifiPrinterMac || 'Printer'})`;
+          statusEl.style.color = '#2c7a4b';
+        }
+        
+        const modal = document.getElementById('printerModal');
+        if (modal) modal.style.display = 'none';
+        
+        resolve(true);
+        return;
+      }
+
+      // Step 3: Ask ESP32 to connect to BT printer
+      if (statusEl) {
+        statusEl.innerText = '🔗 ESP32 connecting to printer...';
+        statusEl.style.color = '#f59e0b';
+      }
+      
+      const connRes = await fetch(`${ESP32_PRINTER_URL}/bt/connect`, {
+        method: 'POST',
+        cache: 'no-store'
+      });
+      
+      const connData = await connRes.json();
+      
+      if (!connData.ok) {
+        throw new Error(connData.error || 'Failed to connect BT printer via ESP32');
+      }
+
+      // Step 4: Success
+      wifiPrinterConnected = true;
       isPrinterConnected = true;
-      window.printerAPI = { isConnected: true, printReceipt: printReceipt, openDrawer: openCashDrawer, printPrizeVoucher: printPrizeVoucher };
+      wifiPrinterMac = connData.mac || "";
+      
+      window.printerAPI = {
+        isConnected: true,
+        printReceipt: printReceipt,
+        openDrawer: openCashDrawer,
+        printPrizeVoucher: printPrizeVoucher,
+        printPromoVoucher: printPromoVoucher,
+        printSettlementReport: printSettlementReport,
+        isWifi: true,
+        mac: wifiPrinterMac
+      };
+      
       updatePrinterStatusUI();
-      document.getElementById('printerModal').style.display = 'none';
+      startPrinterHealthCheck();
+      
+      if (statusEl) {
+        statusEl.innerText = `✅ Connected (${wifiPrinterMac || 'Printer'})`;
+        statusEl.style.color = '#2c7a4b';
+      }
+      
+      const modal = document.getElementById('printerModal');
+      if (modal) modal.style.display = 'none';
+      
       resolve(true);
+      
     } catch (err) {
-      document.getElementById('printerStatusModal').innerText = `❌ ${err.message}`;
-      console.error(err);
+      console.error('❌ WiFi printer connect error:', err);
+      
+      const statusEl = document.getElementById('printerStatusModal');
+      if (statusEl) {
+        statusEl.innerText = `❌ ${err.message}`;
+        statusEl.style.color = '#ef4444';
+      }
+      
       reject(err);
     } finally {
-      document.getElementById('connectPrinterModalBtn').disabled = false;
+      const connectBtn = document.getElementById('connectPrinterModalBtn');
+      if (connectBtn) connectBtn.disabled = false;
     }
   });
 }
 
-function disconnectPrinter() {
-  if (gattServer) { gattServer.disconnect(); gattServer = null; printerCharacteristic = null; }
+// ============================================================
+// DISCONNECT PRINTER
+// ============================================================
+async function disconnectPrinter() {
+  stopPrinterHealthCheck();
+  
+  try {
+    if (wifiPrinterConnected) {
+      await fetch(`${ESP32_PRINTER_URL}/bt/disconnect`, {
+        method: 'POST',
+        cache: 'no-store'
+      }).catch(() => {});
+    }
+  } catch (e) { /* ignore */ }
+  
+  wifiPrinterConnected = false;
   isPrinterConnected = false;
-  window.printerAPI = { isConnected: false, printReceipt: printReceipt, openDrawer: openCashDrawer, printPrizeVoucher: printPrizeVoucher };
+  wifiPrinterMac = "";
+  
+  window.printerAPI = {
+    isConnected: false,
+    printReceipt: printReceipt,
+    openDrawer: openCashDrawer,
+    printPrizeVoucher: printPrizeVoucher,
+    printPromoVoucher: printPromoVoucher,
+    printSettlementReport: printSettlementReport
+  };
+  
   updatePrinterStatusUI();
 }
 
+// ============================================================
+// PRINTER STATUS UI
+// ============================================================
 function updatePrinterStatusUI() {
-  if (isPrinterConnected) {
-    document.getElementById('printerStatusModal').innerText = '✅ Printer connected';
-    document.getElementById('printerStatusModal').style.color = '#2c7a4b';
+  const statusEl = document.getElementById('printerStatusModal');
+  if (!statusEl) return;
+  
+  if (isPrinterConnected && wifiPrinterConnected) {
+    statusEl.innerText = `✅ WiFi Printer ready${wifiPrinterMac ? ' (' + wifiPrinterMac + ')' : ''}`;
+    statusEl.style.color = '#2c7a4b';
   } else {
-    document.getElementById('printerStatusModal').innerText = '⚪ Not connected';
-    document.getElementById('printerStatusModal').style.color = '#64748b';
+    statusEl.innerText = '⚪ Not connected';
+    statusEl.style.color = '#64748b';
   }
-}
-
-async function sendChunkedData(data, chunkSize = 500) {
-  if (!printerCharacteristic) return false;
-  let offset = 0;
-  while (offset < data.length) {
-    const chunk = data.slice(offset, offset + chunkSize);
-    try {
-      await printerCharacteristic.writeValueWithResponse(chunk);
-      await new Promise(resolve => setTimeout(resolve, 50));
-    } catch (err) {
-      console.error('Chunk write failed:', err);
-      throw err;
+  
+  const printerBtn = document.getElementById('printerIconBtn');
+  if (printerBtn) {
+    if (isPrinterConnected) {
+      printerBtn.style.background = '#2c7a4b';
+      printerBtn.title = 'Printer connected';
+    } else {
+      printerBtn.style.background = '#1e293b';
+      printerBtn.title = 'Printer not connected';
     }
-    offset += chunkSize;
   }
-  return true;
+  
+  const connectBtn = document.getElementById('connectPrinterModalBtn');
+  if (connectBtn) {
+    connectBtn.innerText = isPrinterConnected ? 'Disconnect' : 'Connect Printer';
+  }
 }
 
+// ============================================================
+// HEALTH CHECK
+// ============================================================
+function startPrinterHealthCheck() {
+  stopPrinterHealthCheck();
+  
+  printerHealthCheckInterval = setInterval(async () => {
+    if (!wifiPrinterConnected) return;
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      const res = await fetch(`${ESP32_PRINTER_URL}/status`, {
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+      clearTimeout(timeoutId);
+      
+      const status = await res.json();
+      
+      if (!status.bt_connected) {
+        console.warn('⚠️ Printer disconnected from ESP32');
+        wifiPrinterConnected = false;
+        isPrinterConnected = false;
+        window.printerAPI.isConnected = false;
+        updatePrinterStatusUI();
+      }
+      
+      if (window._printerFailCount) window._printerFailCount = 0;
+      
+    } catch (err) {
+      console.warn('⚠️ ESP32 health check failed:', err.message);
+      
+      if (!window._printerFailCount) window._printerFailCount = 0;
+      window._printerFailCount++;
+      
+      if (window._printerFailCount >= 3) {
+        wifiPrinterConnected = false;
+        isPrinterConnected = false;
+        window.printerAPI.isConnected = false;
+        updatePrinterStatusUI();
+        window._printerFailCount = 0;
+      }
+    }
+  }, 15000);
+}
+
+function stopPrinterHealthCheck() {
+  if (printerHealthCheckInterval) {
+    clearInterval(printerHealthCheckInterval);
+    printerHealthCheckInterval = null;
+  }
+  window._printerFailCount = 0;
+}
+
+// ============================================================
+// SEND CHUNKED DATA - posts to ESP32 via HTTP
+// ============================================================
+async function sendChunkedData(data, chunkSize = 500) {
+  if (!wifiPrinterConnected) {
+    throw new Error('WiFi printer not connected');
+  }
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    
+    const res = await fetch(`${ESP32_PRINTER_URL}/print`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: data,
+      signal: controller.signal,
+      cache: 'no-store'
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const errData = await res.json();
+        errMsg = errData.error || errMsg;
+      } catch (e) {}
+      throw new Error(`Print failed: ${errMsg}`);
+    }
+    
+    const result = await res.json();
+    
+    if (!result.ok) {
+      throw new Error(result.error || 'Print failed');
+    }
+    
+    console.log(`✅ Printed ${result.bytes || data.length} bytes via ESP32`);
+    return true;
+    
+  } catch (err) {
+    console.error('❌ HTTP print error:', err);
+    
+    if (err.name === 'AbortError' || err.message.includes('Failed to fetch')) {
+      wifiPrinterConnected = false;
+      isPrinterConnected = false;
+      window.printerAPI.isConnected = false;
+      updatePrinterStatusUI();
+    }
+    
+    throw err;
+  }
+}
+
+// ============================================================
+// OPEN CASH DRAWER
+// ============================================================
 async function openCashDrawer() {
-  if (!isPrinterConnected || !printerCharacteristic) {
-    await showAlertModal('Printer not connected', 'Please connect a printer first.');
+  if (!wifiPrinterConnected) {
+    await showAlertModal('Printer not connected', 'Please connect the WiFi printer first.');
     return false;
   }
+  
   try {
     const drawerCommand = new Uint8Array([0x1B, 0x70, 0x00, 0x19, 0xFA]);
-    await printerCharacteristic.writeValueWithResponse(drawerCommand);
+    await sendChunkedData(drawerCommand, 64);
+    console.log('✅ Cash drawer opened');
     return true;
   } catch (err) {
-    console.error(err);
-    await showAlertModal('Drawer Error', 'Failed to open drawer.');
+    console.error('❌ Drawer error:', err);
+    await showAlertModal('Drawer Error', 'Failed to open drawer. Check printer connection.');
     return false;
   }
 }
 
+// ============================================================
+// VAR MIGRATION - Keep the old `printerCharacteristic` variable
+// ============================================================
+// The old code used `printerCharacteristic` in some checks - we keep it
+// as a sentinel so those checks still work
+let printerCharacteristic = { wifi: true };  // sentinel
+
+// ============================================================
+// KEEP printReceipt(), printPrizeVoucher(), printPromoVoucher(), 
+// printSettlementReport(), printReceiptWithAnimation() UNCHANGED
+// ============================================================
+// ============================================================
+// PRINT RECEIPT
+// ============================================================
 async function printReceipt(transaction, copies = 1) {
-  if (!isPrinterConnected || !printerCharacteristic) {
-    await showAlertModal('Printer required', 'Connect Bluetooth printer first.');
+  if (!isPrinterConnected || !wifiPrinterConnected) {
+    await showAlertModal('Printer required', 'Connect the WiFi printer first.');
     return false;
   }
+  
   try {
     const paperSize = document.getElementById('paperSizeSelectModal').value;
     localStorage.setItem('printerPaperSize', paperSize);
@@ -8260,24 +8515,30 @@ async function printReceipt(transaction, copies = 1) {
     await sendChunkedData(new Uint8Array(allCommands), 500);
     return true;
   } catch (err) {
-    console.error(err);
+    console.error('printReceipt error:', err);
     return false;
   }
 }
 
+// ============================================================
+// PRINT PRIZE VOUCHER
+// ============================================================
 async function printPrizeVoucher(prizeLabel, receiptNumber, spinDate = new Date()) {
-  if (!isPrinterConnected || !printerCharacteristic) {
-    await showAlertModal('Printer not connected', 'Please connect a printer first.');
+  if (!isPrinterConnected || !wifiPrinterConnected) {
+    await showAlertModal('Printer not connected', 'Please connect the WiFi printer first.');
     return false;
   }
+  
   try {
     const encoder = new TextEncoder();
+    
     function formatDate(date) {
       const d = date.getDate().toString().padStart(2, '0');
       const m = (date.getMonth() + 1).toString().padStart(2, '0');
       const y = date.getFullYear();
       return `${d}/${m}/${y}`;
     }
+    
     const validFrom = new Date(spinDate.getFullYear(), spinDate.getMonth(), spinDate.getDate());
     const validTill = new Date(validFrom);
     validTill.setDate(validTill.getDate() + 30);
@@ -8299,6 +8560,7 @@ async function printPrizeVoucher(prizeLabel, receiptNumber, spinDate = new Date(
     } else {
       lines.push('NO STACKING PROMO');
     }
+    
     lines.push(
       '',
       `VALID FROM ${formatDate(validFrom)}`,
@@ -8334,9 +8596,225 @@ async function printPrizeVoucher(prizeLabel, receiptNumber, spinDate = new Date(
     await sendChunkedData(new Uint8Array(commands), 500);
     return true;
   } catch (err) {
-    console.error('Print voucher error:', err);
+    console.error('printPrizeVoucher error:', err);
     return false;
   }
+}
+
+// ============================================================
+// PRINT PROMO VOUCHER
+// ============================================================
+async function printPromoVoucher(description, voucherId, validFrom, validTill) {
+  if (!isPrinterConnected || !wifiPrinterConnected) return false;
+
+  const encoder = new TextEncoder();
+  const maxChars = document.getElementById('paperSizeSelectModal').value === '58' ? 32 : 48;
+  const separator = '='.repeat(maxChars);
+  const dash = '-'.repeat(maxChars);
+
+  const lines = [
+    '',
+    'PROMOTIONAL VOUCHER',
+    separator,
+    `OFFER: ${description}`,
+    `CODE: ${voucherId}`,
+    dash,
+    `VALID FROM: ${validFrom}`,
+    `VALID TILL: ${validTill}`,
+    separator,
+    'TERMS & CONDITIONS',
+    '- Present this QR code at checkout',
+    '- Not combinable with other promotions',
+    '- One time use only',
+    separator,
+    ''
+  ];
+
+  const text = lines.join('\n');
+
+  const commands = [];
+  commands.push(0x1B, 0x40);
+  commands.push(0x1B, 0x61, 0x01);
+
+  for (let ch of text) commands.push(ch.charCodeAt(0));
+
+  const qrData = voucherId;
+  const qrDataLen = qrData.length;
+
+  commands.push(0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
+  commands.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x08);
+  commands.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x30);
+  commands.push(0x1D, 0x28, 0x6B, 0x00, 0x00, 0x31, 0x50, 0x30);
+  const qrDataCommand = [0x1D, 0x28, 0x6B, (qrDataLen + 3) & 0xFF, ((qrDataLen + 3) >> 8) & 0xFF, 0x31, 0x50, 0x30];
+  for (let i = 0; i < qrDataLen; i++) qrDataCommand.push(qrData.charCodeAt(i));
+  commands.push(...qrDataCommand);
+  commands.push(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30);
+
+  commands.push(0x0A, 0x0A);
+  commands.push(0x1B, 0x64, 0x03);
+  commands.push(0x1D, 0x56, 0x41, 0x00);
+
+  return await sendChunkedData(new Uint8Array(commands), 500);
+}
+
+// ============================================================
+// PRINT SETTLEMENT REPORT
+// ============================================================
+async function printSettlementReport(store, date, totals) {
+  if (!isPrinterConnected || !wifiPrinterConnected) {
+    await showAlertModal('Printer not connected', 'Settlement recorded but could not print report. Please connect printer.');
+    return false;
+  }
+
+  try {
+    const paperSize = document.getElementById('paperSizeSelectModal').value;
+    const maxChars = paperSize === '58' ? 32 : 48;
+    const encoder = new TextEncoder();
+
+    const storeName = store.charAt(0).toUpperCase() + store.slice(1).replace('_', ' ');
+    const separator = '='.repeat(maxChars);
+    const dash = '-'.repeat(maxChars);
+
+    const lines = [];
+    lines.push('');
+    lines.push('DAILY SETTLEMENT REPORT');
+    lines.push(separator);
+    lines.push(`Store     : ${storeName}`);
+    lines.push(`Date      : ${date}`);
+    lines.push(`Time      : ${new Date().toLocaleString()}`);
+    lines.push(separator);
+    lines.push('SYSTEM TOTALS');
+    lines.push(dash);
+    lines.push(`Cash      : RM ${(totals.cashSystem || 0).toFixed(2)}`);
+    lines.push(`Card      : RM ${(totals.cardSystem || 0).toFixed(2)}`);
+    lines.push(`QR Pay    : RM ${(totals.qrSystem || 0).toFixed(2)}`);
+    lines.push(`Alipay    : RM ${(totals.alipaySystem || 0).toFixed(2)}`);
+    lines.push(`Refunds   : RM ${(totals.refundSystem || 0).toFixed(2)}`);
+    lines.push(separator);
+    lines.push('ACTUAL COUNTS');
+    lines.push(dash);
+    lines.push(`Cash      : RM ${(totals.cashActual || 0).toFixed(2)}`);
+    lines.push(`Card      : RM ${(totals.cardActual || 0).toFixed(2)}`);
+    lines.push(`QR Pay    : RM ${(totals.qrActual || 0).toFixed(2)}`);
+    lines.push(`Alipay    : RM ${(totals.alipayActual || 0).toFixed(2)}`);
+    lines.push(separator);
+    lines.push('DISCREPANCIES');
+    lines.push(dash);
+    const cashDiff = (totals.cashActual || 0) - (totals.cashSystem || 0);
+    const cardDiff = (totals.cardActual || 0) - (totals.cardSystem || 0);
+    const qrDiff = (totals.qrActual || 0) - (totals.qrSystem || 0);
+    const alipayDiff = (totals.alipayActual || 0) - (totals.alipaySystem || 0);
+    lines.push(`Cash   : ${cashDiff >= 0 ? '+' : ''}RM ${cashDiff.toFixed(2)}`);
+    lines.push(`Card   : ${cardDiff >= 0 ? '+' : ''}RM ${cardDiff.toFixed(2)}`);
+    lines.push(`QR Pay : ${qrDiff >= 0 ? '+' : ''}RM ${qrDiff.toFixed(2)}`);
+    lines.push(`Alipay : ${alipayDiff >= 0 ? '+' : ''}RM ${alipayDiff.toFixed(2)}`);
+    lines.push(separator);
+    const pettyCashValue = parseFloat(totals.pettyCash) || 0;
+    lines.push(`Petty Cash Float : RM ${pettyCashValue.toFixed(2)}`);
+    lines.push(separator);
+    lines.push('COLLECTED AMOUNT');
+    lines.push(dash);
+    const totalActual = (totals.cashActual || 0) + (totals.cardActual || 0) + (totals.qrActual || 0) + (totals.alipayActual || 0);
+    lines.push(`TOTAL SALES : RM ${totalActual.toFixed(2)}`);
+    lines.push(separator);
+    lines.push('SIGNATURE');
+    lines.push('_________________');
+    lines.push('Cashier / Manager');
+    lines.push('');
+    lines.push('');
+
+    const text = lines.join('\n');
+    const commands = [];
+    commands.push(0x1B, 0x40);
+    commands.push(0x1B, 0x61, 0x01);
+    for (let i = 0; i < text.length; i++) {
+      commands.push(text.charCodeAt(i));
+    }
+    commands.push(0x0A);
+    commands.push(0x1D, 0x56, 0x41, 0x00);
+
+    await sendChunkedData(new Uint8Array(commands), 500);
+    return true;
+  } catch (err) {
+    console.error('Settlement print error:', err);
+    return false;
+  }
+}
+// Those functions all call sendChunkedData() which now posts to ESP32.
+// Just make sure they're still in your file AFTER this block.
+
+// ============================================================
+// AUTO-CONNECT ON PAGE LOAD (silent attempt)
+// ============================================================
+async function tryAutoConnectPrinter() {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${ESP32_PRINTER_URL}/status`, {
+      signal: controller.signal,
+      cache: 'no-store'
+    });
+    clearTimeout(timeoutId);
+    
+    const status = await res.json();
+    
+    if (status.bt_connected === true) {
+      wifiPrinterConnected = true;
+      isPrinterConnected = true;
+      wifiPrinterMac = status.mac || "";
+      
+      window.printerAPI = {
+        isConnected: true,
+        printReceipt: printReceipt,
+        openDrawer: openCashDrawer,
+        printPrizeVoucher: printPrizeVoucher,
+        printPromoVoucher: printPromoVoucher,
+        printSettlementReport: printSettlementReport,
+        isWifi: true,
+        mac: wifiPrinterMac
+      };
+      
+      updatePrinterStatusUI();
+      startPrinterHealthCheck();
+      
+      console.log('✅ WiFi printer auto-connected:', wifiPrinterMac);
+      return true;
+    } else {
+      // ESP32 is reachable — ask it to connect
+      const connRes = await fetch(`${ESP32_PRINTER_URL}/bt/connect`, {
+        method: 'POST',
+        cache: 'no-store'
+      });
+      const connData = await connRes.json();
+      
+      if (connData.ok) {
+        wifiPrinterConnected = true;
+        isPrinterConnected = true;
+        wifiPrinterMac = connData.mac || "";
+        
+        window.printerAPI = {
+          isConnected: true,
+          printReceipt: printReceipt,
+          openDrawer: openCashDrawer,
+          printPrizeVoucher: printPrizeVoucher,
+          printPromoVoucher: printPromoVoucher,
+          printSettlementReport: printSettlementReport,
+          isWifi: true,
+          mac: wifiPrinterMac
+        };
+        
+        updatePrinterStatusUI();
+        startPrinterHealthCheck();
+        
+        console.log('✅ WiFi printer auto-connected:', wifiPrinterMac);
+        return true;
+      }
+    }
+  } catch (err) {
+    console.log('ℹ️ WiFi printer not available at startup:', err.message);
+  }
+  
+  return false;
 }
 
 async function printReceiptWithAnimation(transaction, copies = 1) {
@@ -16821,6 +17299,23 @@ async function finishLoginAfterVerification() {
   refreshCategoryHighlighting();
 
   // ============================================================
+  // ✅ AUTO-CONNECT TO ESP32 WIFI PRINTER BRIDGE
+  //    Runs silently in the background — no user interaction needed
+  //    If ESP32 is unreachable, POS still works normally
+  // ============================================================
+  tryAutoConnectPrinter()
+    .then(success => {
+      if (success) {
+        console.log('✅ WiFi printer auto-connected successfully');
+      } else {
+        console.log('ℹ️ WiFi printer not available — will retry on manual connect');
+      }
+    })
+    .catch(err => {
+      console.log('ℹ️ Printer auto-connect skipped:', err.message);
+    });
+
+  // ============================================================
   // ✅ Final safety re-render of the product grid
   //    Ensures filter state is respected after all the above runs
   // ============================================================
@@ -16836,7 +17331,9 @@ async function finishLoginAfterVerification() {
     storeFilterActive: storeFilterActive,
     showAllProductsInInventory: showAllProductsInInventory,
     productsLoaded: products.length,
-    categoryStoreMapEntries: Object.keys(categoryStoreMap || {}).length
+    categoryStoreMapEntries: Object.keys(categoryStoreMap || {}).length,
+    esp32PrinterUrl: ESP32_PRINTER_URL,
+    printerConnected: isPrinterConnected
   });
 }
 async function loadInitialData(force = false) {
@@ -18451,10 +18948,22 @@ document.getElementById('collectSelectedBtn').addEventListener('click', async ()
     document.getElementById('printerModal').style.display = 'flex';
     updatePrinterStatusUI();
   });
-  document.getElementById('connectPrinterModalBtn').addEventListener('click', () => {
-    if (!isPrinterConnected) connectPrinter();
-    else disconnectPrinter();
-  });
+  document.getElementById('connectPrinterModalBtn').addEventListener('click', async () => {
+  if (!isPrinterConnected) {
+    try {
+      await connectPrinter();
+      await showAlertModal('✅ Connected', 'WiFi printer ready!');
+    } catch (err) {
+      await showAlertModal('❌ Connection Failed', 
+        `Could not connect to printer.\n\n${err.message}\n\n` +
+        `Make sure ESP32 printer bridge is powered and on the same WiFi.`
+      );
+    }
+  } else {
+    await disconnectPrinter();
+    await showAlertModal('Disconnected', 'Printer disconnected.');
+  }
+});
   document.getElementById('closePrinterModal').addEventListener('click', () => document.getElementById('printerModal').style.display = 'none');
   document.getElementById('closePrinterModalBtn').addEventListener('click', () => document.getElementById('printerModal').style.display = 'none');
 
