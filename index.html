@@ -7662,8 +7662,9 @@ function setPrinterModalStatus(icon, title, subtitle, color = '#64748b') {
 // Update the modal status based on current state
 function refreshPrinterModalStatus() {
   if (isPrinterConnected && wifiPrinterConnected) {
-    setPrinterModalStatus('✅', 'Connected', 
-      `${wifiPrinterMac || 'Unknown MAC'}`, '#059669');
+    const label = wifiPrinterName || 'Unknown Printer';
+    const macLine = wifiPrinterMac ? `MAC: ${wifiPrinterMac}` : '';
+    setPrinterModalStatus('✅', label, macLine, '#059669');
   } else {
     setPrinterModalStatus('⚪', 'Not Connected', 
       'No printer bridge active', '#64748b');
@@ -7871,6 +7872,7 @@ async function confirmManualPair() {
       wifiPrinterConnected = true;
       isPrinterConnected = true;
       wifiPrinterMac = data.mac || mac;
+	  wifiPrinterName = data.name || name;
       
       window.printerAPI = {
         isConnected: true,
@@ -8489,6 +8491,7 @@ async function getNextTransactionNumber(store) {
 
 let wifiPrinterConnected = false;
 let wifiPrinterMac = "";
+let wifiPrinterName = "";   // ✅ NEW
 let printerHealthCheckInterval = null;
 
 // ============================================================
@@ -8528,6 +8531,7 @@ async function connectPrinter() {
         wifiPrinterConnected = true;
         isPrinterConnected = true;
         wifiPrinterMac = status.mac || "";
+		 wifiPrinterName = status.name || "";   // ✅ NEW
         
         window.printerAPI = {
           isConnected: true,
@@ -8576,6 +8580,7 @@ async function connectPrinter() {
       wifiPrinterConnected = true;
       isPrinterConnected = true;
       wifiPrinterMac = connData.mac || "";
+	  wifiPrinterName = connData.name || "";   // ✅ NEW
       
       window.printerAPI = {
         isConnected: true,
@@ -8636,7 +8641,7 @@ async function disconnectPrinter() {
   wifiPrinterConnected = false;
   isPrinterConnected = false;
   wifiPrinterMac = "";
-  
+  wifiPrinterName = "";
   window.printerAPI = {
     isConnected: false,
     printReceipt: printReceipt,
@@ -8657,7 +8662,8 @@ function updatePrinterStatusUI() {
   if (!statusEl) return;
   
   if (isPrinterConnected && wifiPrinterConnected) {
-    statusEl.innerText = `✅ WiFi Printer ready${wifiPrinterMac ? ' (' + wifiPrinterMac + ')' : ''}`;
+    const label = wifiPrinterName || wifiPrinterMac || 'Printer';
+    statusEl.innerText = `✅ Connected: ${label}`;
     statusEl.style.color = '#2c7a4b';
   } else {
     statusEl.innerText = '⚪ Not connected';
@@ -9235,6 +9241,7 @@ async function tryAutoConnectPrinter() {
       wifiPrinterConnected = true;
       isPrinterConnected = true;
       wifiPrinterMac = status.mac || "";
+	  wifiPrinterName = status.name || "";   // ✅ NEW
       
       window.printerAPI = {
         isConnected: true,
@@ -9264,6 +9271,7 @@ async function tryAutoConnectPrinter() {
         wifiPrinterConnected = true;
         isPrinterConnected = true;
         wifiPrinterMac = connData.mac || "";
+		wifiPrinterName = connData.name || "";   // ✅ NEW
         
         window.printerAPI = {
           isConnected: true,
