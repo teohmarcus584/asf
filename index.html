@@ -8498,21 +8498,92 @@ let printerHealthCheckInterval = null;
 // CONNECT PRINTER - talks to ESP32 over WiFi
 // ============================================================
 async function connectPrinter() {
+  // ============================================================
+  // CONTEXT CHECK — logs everything needed to diagnose
+  // ============================================================
+  console.log('=== connectPrinter CONTEXT ===');
+  console.log('page href:', window.location.href);
+  console.log('page protocol:', window.location.protocol);
+  console.log('page origin:', window.location.origin);
+  console.log('document.readyState:', document.readyState);
+  console.log('typeof fetch:', typeof fetch);
+  console.log('ESP32_PRINTER_URL:', ESP32_PRINTER_URL);
+  console.log('url to fetch:', `${ESP32_PRINTER_URL}/status`);
+  console.log('isPrinterConnected:', isPrinterConnected);
+  console.log('wifiPrinterConnected:', wifiPrinterConnected);
+  console.log('navigator.onLine:', navigator.onLine);
+  console.log('=== END CONTEXT ===');
+
   const statusEl = document.getElementById('printerStatusModal');
+  const connectBtn = document.getElementById('connectPrinterModalBtn');
   
+  if (connectBtn) connectBtn.disabled = true;
   if (statusEl) {
     statusEl.innerText = '🔍 Checking ESP32 printer bridge...';
     statusEl.style.color = '#3b82f6';
   }
 
   try {
-    // Step 1: Simple GET /status — no signal, no cache, no options
-    const statusRes = await fetch(`${ESP32_PRINTER_URL}/status`);
-    if (!statusRes.ok) throw new Error(`ESP32 returned HTTP ${statusRes.status}`);
-    const status = await statusRes.json();
+    // ============================================================
+    // PRE-FLIGHT: try a bare fetch to see if fetch() itself works
+    // ============================================================
+    let preFlightOk = false;
+    try {
+      const preRes = await fetch('http://192.168.0.110/status', {
+        // Deliberately no options — bare minimum
+      });
+      console.log('✅ Pre-flight fetch SUCCESS, status:', preRes.status);
+      preFlightOk = true;
+    } catch (preErr) {
+      console.error('❌ Pre-flight fetch FAILED:', {
+        message: preErr.message,
+        name: preErr.name,
+        stack: preErr.stack
+      });
+      // Try with the /status body parse to confirm content
+      try {
+        const retry = await fetch('http://192.168.0.110/status');
+        const txt = await retry.text();
+        console.log('✅ Second attempt SUCCESS. Body:', txt);
+        preFlightOk = true;
+      } catch (retryErr) {
+        console.error('❌ Second attempt also failed:', retryErr.message);
+      }
+    }
 
-    // Step 2: ESP32 has BT printer ready
+    if (!preFlightOk) {
+      throw new Error(
+        `fetch() is blocked on this device. ` +
+        `Page origin: ${window.location.origin}, ` +
+        `Protocol: ${window.location.protocol}. ` +
+        `If this is file://, you must serve the POS over HTTP.`
+      );
+    }
+
+    // ============================================================
+    // STEP 1: Get printer status
+    // ============================================================
+    console.log('📡 Step 1: Fetching /status...');
+    const statusRes = await fetch(`${ESP32_PRINTER_URL}/status`, {
+  targetAddressSpace: 'private'
+});
+    
+    console.log('   status HTTP code:', statusRes.status);
+    console.log('   status ok:', statusRes.ok);
+    
+    if (!statusRes.ok) {
+      throw new Error(`ESP32 returned HTTP ${statusRes.status}`);
+    }
+    
+    const status = await statusRes.json();
+    console.log('   status body:', status);
+
+    // ============================================================
+    // STEP 2: If ESP32 already has BT printer, we're done
+    // ============================================================
     if (status.bt_connected === true) {
+      console.log('✅ ESP32 reports BT printer already connected');
+      
       wifiPrinterConnected = true;
       isPrinterConnected = true;
       wifiPrinterMac = status.mac || "";
@@ -8540,10 +8611,15 @@ async function connectPrinter() {
       const modal = document.getElementById('printerModal');
       if (modal) modal.style.display = 'none';
       
+      if (connectBtn) connectBtn.disabled = false;
       return true;
     }
 
-    // Step 3: ESP32 not connected to BT — ask it to connect
+    // ============================================================
+    // STEP 3: Ask ESP32 to connect to BT printer
+    // ============================================================
+    console.log('🔗 Step 3: POSTing /bt/connect...');
+    
     if (statusEl) {
       statusEl.innerText = '🔗 ESP32 connecting to printer...';
       statusEl.style.color = '#f59e0b';
@@ -8552,12 +8628,25 @@ async function connectPrinter() {
     const connRes = await fetch(`${ESP32_PRINTER_URL}/bt/connect`, {
       method: 'POST'
     });
+    
+    console.log('   /bt/connect HTTP code:', connRes.status);
+    
+    if (!connRes.ok) {
+      throw new Error(`/bt/connect returned HTTP ${connRes.status}`);
+    }
+    
     const connData = await connRes.json();
+    console.log('   /bt/connect body:', connData);
     
     if (!connData.ok) {
       throw new Error(connData.error || 'ESP32 could not connect to BT printer');
     }
 
+    // ============================================================
+    // SUCCESS
+    // ============================================================
+    console.log('✅ ESP32 successfully connected to BT printer');
+    
     wifiPrinterConnected = true;
     isPrinterConnected = true;
     wifiPrinterMac = connData.mac || "";
@@ -8585,16 +8674,27 @@ async function connectPrinter() {
     const modal = document.getElementById('printerModal');
     if (modal) modal.style.display = 'none';
     
+    if (connectBtn) connectBtn.disabled = false;
     return true;
     
   } catch (err) {
-    console.error('❌ connectPrinter error:', err);
+    console.error('❌ connectPrinter error:', {
+      message: err.message,
+      name: err.name,
+      stack: err.stack,
+      pageHref: window.location.href,
+      pageOrigin: window.location.origin,
+      pageProtocol: window.location.protocol,
+      targetUrl: `${ESP32_PRINTER_URL}/status`,
+      navigatorOnline: navigator.onLine
+    });
     
     if (statusEl) {
       statusEl.innerText = `❌ ${err.message}`;
       statusEl.style.color = '#ef4444';
     }
     
+    if (connectBtn) connectBtn.disabled = false;
     throw err;
   }
 }
@@ -8738,12 +8838,13 @@ async function sendChunkedData(data, chunkSize = 500) {
   console.log(`Sending ${raw.length} raw → ${formBody.length} encoded bytes`);
 
   const doPrint = async () => {
-    return fetch(`${ESP32_PRINTER_URL}/print`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: formBody
-    });
-  };
+  return fetch(`${ESP32_PRINTER_URL}/print`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: formBody,
+    targetAddressSpace: 'private' // <-- THE CODE FIX
+  });
+};
 
   try {
     let res = await doPrint();
